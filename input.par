@@ -1,0 +1,90 @@
+# Input file for INVETA v1.0
+
+# Frequency bands for inversion. Values must be entered as pairs, e.g. {H0,L0; H1,L1; ...; Hn,Ln},
+# where H = high-pass corner frequency, L = low-pass corner frequency. There will be as many inversions
+# as frequency bands.
+Bands = {2.,4.; 4.,8.; 8.,16.; 16., 32.},
+#Bands = {16., 32.},
+
+# Set parameters range for NA inversion.
+# For scalar RTT, set "EtaSS" and "Nu"; for elastic RTT, set "EtaSS", "EtaSP", "EtaPP", "EtaPS".
+EtaSS = {0.00001, 0.03},
+#Nu   = {0, 0},
+EtaSS/PP = {1., 15.},            # EtaSS can be up to 15x larger than EtaPP
+EtaPS/PP = {1., 5.},             # EtaPS can be up to 5x larger than EtaPP
+
+
+# Set autocorrelation function of choice (only for scalar RTT when "Nu" not equal to zero).
+# If acf = 'vk', set also Hurst exponent.
+acf = 'vk', Hurst = 0.5,
+
+# Set average S-wave speed (for elastic RTT, P is computed as "beta * Tp/Ts").
+Beta = 3.0,
+
+# Set inversion parameters.
+# Mode = 0: invert codas of every single event recorded by a receiver.
+# Mode = 1: invert codas recorded by each receiver altogether.
+# Mode = 2: invert all codas related to the same event if recorded by at least "Threshold" receivers.
+# Weight ('y'/'n') enables/disables Weighted Least Square regression
+Mode = 0, Threshold = 3, Weight = 'y',
+
+# "Pwin" and "Swin" determine window width (sec) for direct wave averaging ("Pwin" needed only for elastic RTT).
+# "Factor" controls how much of a window falls after direct wave (default is 100%).
+DIRECT Pwin = 3., Swin = 5., Factor = 100%,
+
+# "Pwin" and "Swin" determine MINIMUM window length (sec) for coda inversions ("Pwin" needed only for elastic RTT).
+# Recordings not fulfilling this requirement will not be used for inversion.
+CODA Pwin = 5., Swin = 6.,
+
+# Set Neighbourhood Algorithm parameters
+InitialModels = 16, Models = 8, Resampled = 4, Iterations = 6, Seed = 6572,
+#InitialModels = 64, Models = 32, Resampled = 8, Iterations = 10, Seed = 6572,
+
+# List of all events for all stations. "Folder" contains recordings, whereas "File" P-/S- arrival times.
+#REC Folder = 'recordings/BALST', File = 'recordings/BALST/BALST_picked_events.txt',
+#REC Folder = 'recordings/HASLI', File = 'recordings/HASLI/HASLI_picked_events.txt',
+## REC Folder = 'recordings/PLONS', File = 'recordings/PLONS/PLONS_picked_events.txt',
+#REC Folder = 'recordings/SULZ', File = 'recordings/SULZ/SULZ_picked_events.txt',
+#REC Folder = 'recordings/ROTHE', File = 'recordings/ROTHE/ROTHE_picked_events.txt',
+#REC Folder = 'recordings/EMMET', File = 'recordings/EMMET/EMMET_picked_events.txt',
+#REC Folder = 'recordings/BERGE', File = 'recordings/BERGE/BERGE_picked_events.txt',
+## REC Folder = 'recordings/SIOV', File = 'recordings/SIOV/SIOV_picked_events.txt',
+#REC Folder = 'recordings/DAGMA', File = 'recordings/DAGMA/DAGMA_picked_events.txt',
+#REC Folder = 'recordings/SBUB', File = 'recordings/SBUB/SBUB_picked_events.txt',
+#REC Folder = 'recordings/SLE', File = 'recordings/SLE/SLE_picked_events.txt',
+#REC Folder = 'recordings/WILA', File = 'recordings/WILA/WILA_picked_events.txt',
+#REC Folder = 'recordings/WEIN', File = 'recordings/WEIN/WEIN_picked_events.txt',
+#REC Folder = 'recordings/SLTM2', File = 'recordings/SLTM2/SLTM2_picked_events.txt',
+#REC Folder = 'recordings/SRER', File = 'recordings/SRER/SRER_picked_events.txt',
+#REC Folder = 'recordings/SAIG', File = 'recordings/SAIG/SAIG_picked_events.txt',
+#REC Folder = 'recordings/SNIB', File = 'recordings/SNIB/SNIB_picked_events.txt',
+#REC Folder = 'recordings/SCUG', File = 'recordings/SCUG/SCUG_picked_events.txt',
+#REC Folder = 'recordings/SFRU', File = 'recordings/SFRU/SFRU_picked_events.txt',
+#REC Folder = 'recordings/SVAM', File = 'recordings/SVAM/SVAM_picked_events.txt',
+#REC Folder = 'recordings/SALTS', File = 'recordings/SALTS/SALTS_picked_events.txt',
+#REC Folder = 'recordings/SMZW', File = 'recordings/SMZW/SMZW_picked_events.txt',
+#REC Folder = 'recordings/SVEJ', File = 'recordings/SVEJ/SVEJ_picked_events.txt',
+#REC Folder = 'recordings/SIOM', File = 'recordings/SIOM/SIOM_picked_events.txt',
+#REC Folder = 'recordings/SLCF', File = 'recordings/SLCF/SLCF_picked_events.txt',
+#REC Folder = 'recordings/SBIS2', File = 'recordings/SBIS2/SBIS2_picked_events.txt',
+#REC Folder = 'recordings/STRW', File = 'recordings/STRW/STRW_picked_events.txt',
+#REC Folder = 'recordings/SOLZ', File = 'recordings/SOLZ/SOLZ_picked_events.txt',
+#REC Folder = 'recordings/SBUH', File = 'recordings/SBUH/SBUH_picked_events.txt',
+## REC Folder = 'recordings/SMUK', File = 'recordings/SMUK/SMUK_picked_events.txt',
+#REC Folder = 'recordings/SOLB', File = 'recordings/SOLB/SOLB_picked_events.txt',
+#REC Folder = 'recordings/SINS', File = 'recordings/SINS/SINS_picked_events.txt',
+#REC Folder = 'recordings/SLUW', File = 'recordings/SLUW/SLUW_picked_events.txt',
+#REC Folder = 'recordings/SYVP', File = 'recordings/SYVP/SYVP_picked_events.txt',
+#REC Folder = 'recordings/SDAK', File = 'recordings/SDAK/SDAK_picked_events.txt',
+#REC Folder = 'recordings/SVIL', File = 'recordings/SVIL/SVIL_picked_events.txt',
+#REC Folder = 'recordings/TORNY', File = 'recordings/TORNY/TORNY_picked_events.txt',
+#REC Folder = 'recordings/FLACH', File = 'recordings/FLACH/FLACH_picked_events.txt',
+#REC Folder = 'recordings/ZUR', File = 'recordings/ZUR/ZUR_picked_events.txt',
+#REC Folder = 'recordings/EMING', File = 'recordings/EMING/EMING_picked_events.txt',
+#REC Folder = 'recordings/SGRA', File = 'recordings/SGRA/SGRA_picked_events.txt',
+#REC Folder = 'recordings/WALHA', File = 'recordings/WALHA/WALHA_picked_events.txt',
+#REC Folder = 'recordings/SIEB', File = 'recordings/SIEB/SIEB_picked_events.txt',
+#REC Folder = 'recordings/SARK', File = 'recordings/SARK/SARK_picked_events.txt',
+#REC Folder = 'recordings/SBUA2', File = 'recordings/SBUA2/SBUA2_picked_events.txt',
+#REC Folder = 'recordings/SMAO', File = 'recordings/SMAO/SMAO_picked_events.txt',
+REC Folder = 'recordings/MTI03', File = 'recordings/MTI03/MTI03_picked_events.txt',
