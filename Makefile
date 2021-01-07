@@ -3,7 +3,7 @@ include Makefile.inc
 OBJ = main.o
 
 all : common llsq fft filter interpolation rtt na $(OBJ)
-	$(FC) $(FFLAGS) -o inveta.exe $(OBJ) -Lcommon/lib -Lllsq/lib -Lfft/lib -Linterpolation/lib -Lfilter/lib -Lrtt/lib -Lna/lib -L$(FFTW_PATH)/lib -L$(LAPACK_PATH) -L$(GSL_PATH) -lcommon -lllsqf -lfilterf -lfft -linterplf -lllsq -lrtt -lna -llapack -lblas -lfftw3 -lgsl -lgslcblas -linterpl
+	$(FC) $(FFLAGS) -fopenmp -o inveta.exe $(OBJ) -Lcommon/lib -Lllsq/lib -Lfft/lib -Linterpolation/lib -Lfilter/lib -Lrtt/lib -Lna/lib -L$(FFTW_PATH)/lib -L$(LAPACK_PATH) -L$(GSL_PATH) -lcommon -lllsqf -lfilterf -lfft -linterplf -lllsq -lrtt -lna -llapack -lblas -lfftw3 -lgsl -lgslcblas -linterpl
 
 # how to get main.o
 $(OBJ) : %.o : %.f90

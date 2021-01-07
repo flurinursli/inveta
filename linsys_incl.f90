@@ -11,7 +11,6 @@
 weight(:) = 0._r32
 
 ! loop over observations
-!$omp parallel do default(shared) private(i, j, k, l, n, time, envelope, is, ie) reduction(max: ok)
 DO j = 1, SIZE(nobs)
 
   l = SUM(nobs(1:j))                   !< sum up number of points used for inversion
@@ -88,7 +87,6 @@ DO j = 1, SIZE(nobs)
   DEALLOCATE(time, envelope)
 
 ENDDO
-!$omp end parallel do
 
 ! set all weight to unity if we want ordinary LLSQ
 IF (noweight) weight(:) = 1._r32

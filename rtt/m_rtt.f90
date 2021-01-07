@@ -424,7 +424,7 @@ MODULE m_rtt
           coefficient = 1._r64
         ENDIF
 
-        ! compute scattering pattern FUNCTION
+        ! compute scattering pattern function
         DO i = 1,npsi
           pattern(i) = coefficient / (1._r64 + 4._r64 * nu * SIN(psi(i) / 2._r64)**2)**(hurst + 1.5_r64)
         ENDDO

@@ -1,5 +1,15 @@
 MODULE m_inveta
 
+  ! Purpose:
+  !   To provide a series of routines used by program INVETA for the inversion of observed seismogram envelopes, including function
+  !   "misfit" called by the inversion algorithm NA and representing the objective function.
+  !
+  ! Revisions:
+  !     Date                    Description of change
+  !     ====                    =====================
+  !   18/12/20                  original version
+  !
+
   USE, NON_INTRINSIC :: m_precisions
   USE, NON_INTRINSIC :: m_strings
   USE, NON_INTRINSIC :: m_rtt
@@ -51,7 +61,7 @@ MODULE m_inveta
     SUBROUTINE write_search(f, code, inverted, mpar, fit)
 
       ! Purpose:
-      !   to write to disk the parameters space explored by NA, including misfit values.
+      !   to write to disk the parameters space explored by NA, including average misfit values.
       !
       ! Revisions:
       !     Date                    Description of change
@@ -65,6 +75,7 @@ MODULE m_inveta
       REAL(r32),                DIMENSION(:), INTENT(IN) :: mpar, fit
       CHARACTER(:), ALLOCATABLE                          :: fo
       INTEGER(i32)                                       :: nd, n, i, lu, ok, lf, hf
+      REAL(r32)                                          :: avg
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
@@ -85,9 +96,11 @@ MODULE m_inveta
       nd = SIZE(mpar) / SIZE(fit)
       n  = 0
 
+      avg = SUM(nobs)
+
       DO i = 1, SIZE(mpar), nd
         n = n + 1
-        WRITE(lu, *) mpar(i:i + nd - 1), fit(n)
+        WRITE(lu, *) mpar(i:i + nd - 1), fit(n) / avg            !< add average misfit value
       ENDDO
 
       CLOSE(lu)
@@ -277,12 +290,6 @@ MODULE m_inveta
         ENDDO
       ENDDO
 
-! if(elastic) then
-!  print*, 'misfit ', misfit, gpp, gps, gss, b(n + 1)
-! else
-!  print*, 'misfit ', misfit, gss, bnu, b(n + 1)
-! endif
-
     END FUNCTION misfit
 
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
@@ -297,7 +304,7 @@ MODULE m_inveta
       ! Revisions:
       !     Date                    Description of change
       !     ====                    =====================
-      !   02/09/20                  original version
+      !   18/12/20                  original version
       !
 
       REAL(r32),   DIMENSION(:), INTENT(IN) :: r
@@ -333,7 +340,7 @@ MODULE m_inveta
       ! Revisions:
       !     Date                    Description of change
       !     ====                    =====================
-      !   02/09/20                  original version
+      !   18/12/20                  original version
       !
 
       CHARACTER(*), DIMENSION(:), INTENT(IN) :: str
@@ -362,7 +369,7 @@ MODULE m_inveta
       ! Revisions:
       !     Date                    Description of change
       !     ====                    =====================
-      !   02/09/20                  original version
+      !   18/12/20                  original version
       !
 
       INTEGER(i32), DIMENSION(:),           INTENT(IN) :: par
@@ -388,7 +395,7 @@ MODULE m_inveta
       ! Revisions:
       !     Date                    Description of change
       !     ====                    =====================
-      !   02/09/20                  original version
+      !   18/12/20                  original version
       !
 
       REAL(r32), DIMENSION(:),           INTENT(IN) :: par
@@ -1667,7 +1674,7 @@ SUBROUTINE watch_start(tictoc, comm)
   ! Revisions:
   !     Date                    Description of change
   !     ====                    =====================
-  !   04/05/20                  original version
+  !   18/12/20                  original version
   !
 
   USE, NON_INTRINSIC :: m_precisions
@@ -1698,7 +1705,7 @@ SUBROUTINE watch_stop(tictoc, comm)
   ! Revisions:
   !     Date                    Description of change
   !     ====                    =====================
-  !   04/05/20                  original version
+  !   18/12/20                  original version
   !
 
   USE, NON_INTRINSIC :: m_precisions

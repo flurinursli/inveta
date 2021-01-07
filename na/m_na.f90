@@ -62,7 +62,7 @@ MODULE m_na
       CALL mpi_comm_size(mpi_comm_world, ntasks, ierr)
       CALL mpi_comm_rank(mpi_comm_world, rank, ierr)
 
-      CALL watch_start(tictoc)
+      ! CALL watch_start(tictoc)
 
       !CALL user_init(nd,nd_max,range,scales)
       ! assign input parameters to NA arrays
@@ -104,7 +104,7 @@ MODULE m_na
 
       nclean = 500
 
-      timing = .true.
+      timing = .false.
 
 
       nmodels = nsamplei + iterations*nsample
@@ -127,7 +127,7 @@ MODULE m_na
 
 ! if (rank == 0) print*, 'NA iteration ', j
 
-        CALL watch_start(tic, mpi_comm_self)
+        ! CALL watch_start(tic, mpi_comm_self)
 
         DO i = rank + 1, ns, ntasks
 
@@ -146,7 +146,7 @@ MODULE m_na
 
         ENDDO
 
-        CALL watch_stop(tic, mpi_comm_self)
+        ! CALL watch_stop(tic, mpi_comm_self)
 
         time_fwd = time_fwd + tic
 
@@ -189,7 +189,7 @@ MODULE m_na
 
       !IF (lroot) CALL writefun(nd, ntot, na_models, misfit)
 
-      CALL watch_start(tictoc)
+      ! CALL watch_start(tictoc)
 
       ! IF (rank .eq. 0) THEN
       !
@@ -1113,65 +1113,65 @@ MODULE m_na
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
-    SUBROUTINE watch_start(tictoc, comm)
-
-      ! Purpose:
-      !   To start the MPI stopwatch. Timing is in double-precision. If specific communicator handle not given, mpi_comm_world is
-      !   used.
-      !
-      ! Revisions:
-      !     Date                    Description of change
-      !     ====                    =====================
-      !   04/05/20                  original version
-      !
-
-      REAL(r64),              INTENT(OUT) :: tictoc                            !< initial time
-      INTEGER(i32), OPTIONAL, INTENT(IN)  :: comm                              !< communicator handle
-      INTEGER(i32)                        :: ierr
-
-      !-----------------------------------------------------------------------------------------------------------------------------
-
-      IF (.not.PRESENT(comm)) THEN
-        CALL mpi_barrier(mpi_comm_world, ierr)
-      ELSE
-        CALL mpi_barrier(comm, ierr)
-      ENDIF
-
-      tictoc = mpi_wtime()
-
-    END SUBROUTINE watch_start
-
-    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
-    !===============================================================================================================================
-    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
-
-    SUBROUTINE watch_stop(tictoc, comm)
-
-      ! Purpose:
-      !   To stop the MPI stopwatch and return elapsed time. Timing is in double-precision.  If specific communicator handle not given,
-      !   mpi_comm_world is used.
-      !
-      ! Revisions:
-      !     Date                    Description of change
-      !     ====                    =====================
-      !   04/05/20                  original version
-      !
-
-      REAL(r64),              INTENT(INOUT) :: tictoc                          !< elapsed time
-      INTEGER(i32), OPTIONAL, INTENT(IN)    :: comm                            !< communicator handle
-      INTEGER(i32)                          :: ierr
-
-      !-----------------------------------------------------------------------------------------------------------------------------
-
-      IF (.not.PRESENT(comm)) THEN
-        CALL mpi_barrier(mpi_comm_world, ierr)
-      ELSE
-        CALL mpi_barrier(comm, ierr)
-      ENDIF
-
-      tictoc = mpi_wtime() - tictoc
-
-    END SUBROUTINE watch_stop
+    ! SUBROUTINE watch_start(tictoc, comm)
+    !
+    !   ! Purpose:
+    !   !   To start the MPI stopwatch. Timing is in double-precision. If specific communicator handle not given, mpi_comm_world is
+    !   !   used.
+    !   !
+    !   ! Revisions:
+    !   !     Date                    Description of change
+    !   !     ====                    =====================
+    !   !   04/05/20                  original version
+    !   !
+    !
+    !   REAL(r64),              INTENT(OUT) :: tictoc                            !< initial time
+    !   INTEGER(i32), OPTIONAL, INTENT(IN)  :: comm                              !< communicator handle
+    !   INTEGER(i32)                        :: ierr
+    !
+    !   !-----------------------------------------------------------------------------------------------------------------------------
+    !
+    !   IF (.not.PRESENT(comm)) THEN
+    !     CALL mpi_barrier(mpi_comm_world, ierr)
+    !   ELSE
+    !     CALL mpi_barrier(comm, ierr)
+    !   ENDIF
+    !
+    !   tictoc = mpi_wtime()
+    !
+    ! END SUBROUTINE watch_start
+    !
+    ! ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    ! !===============================================================================================================================
+    ! ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !
+    ! SUBROUTINE watch_stop(tictoc, comm)
+    !
+    !   ! Purpose:
+    !   !   To stop the MPI stopwatch and return elapsed time. Timing is in double-precision.  If specific communicator handle not given,
+    !   !   mpi_comm_world is used.
+    !   !
+    !   ! Revisions:
+    !   !     Date                    Description of change
+    !   !     ====                    =====================
+    !   !   04/05/20                  original version
+    !   !
+    !
+    !   REAL(r64),              INTENT(INOUT) :: tictoc                          !< elapsed time
+    !   INTEGER(i32), OPTIONAL, INTENT(IN)    :: comm                            !< communicator handle
+    !   INTEGER(i32)                          :: ierr
+    !
+    !   !-----------------------------------------------------------------------------------------------------------------------------
+    !
+    !   IF (.not.PRESENT(comm)) THEN
+    !     CALL mpi_barrier(mpi_comm_world, ierr)
+    !   ELSE
+    !     CALL mpi_barrier(comm, ierr)
+    !   ENDIF
+    !
+    !   tictoc = mpi_wtime() - tictoc
+    !
+    ! END SUBROUTINE watch_stop
 
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
     !===============================================================================================================================
