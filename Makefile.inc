@@ -1,8 +1,13 @@
 FC = mpif90
+
+# flags GCC
 #FFLAGS = -g -std=f2008 -fcheck=all -fbacktrace
 FFLAGS = -O3 -std=f2008 -march=native
-#FFLAGS = -O3 -xHost -ipo
 
+# flags INTEL
+#FFLAGS = -O3 -xHost
+
+# flags for lapack, fftw, etc.
 #MKL       = -DMKL
 #INCL_FFTW = /opt/intel/mkl/include/fftw
 INCL_FFTW = $(FFTW_PATH)/include
