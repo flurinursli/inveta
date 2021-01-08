@@ -559,7 +559,8 @@ PROGRAM main
                       num2char(nu(1), notation='f', width=6, precision=1, justify='r') + ',' +      &
                       num2char(nu(2), notation='f', width=6, precision=1) + '|' , blankline = .false.)
       IF (ANY(nu .ne. 0._r32)) THEN
-        CALL update_log(num2char('acf of choice', width=29, fill='.') + num2char(acf, width=17) + '|', blankline = .false.)
+        CALL update_log(num2char('acf of choice', width=29, fill='.') + num2char(acf, width=17, justify='r') + '|',    &
+                        blankline = .false.)
         IF (acf .eq. 'vk')  &
         CALL update_log(num2char('Hurst exponent', width=29, fill='.') + num2char(hurst, notation='f', width=17, precision=3,   &
                         justify='r') + '|', blankline = .false.)

@@ -2,15 +2,15 @@ include ../Makefile.inc
 
 LIB_NAME = libfft.a
 
-F90_OBJ = m_fft_real.o m_fft_complex.o 
+F90_OBJ = m_fft_real.o m_fft_complex.o
 
 # default rule
 fft : dirs $(LIB_NAME)
 
 $(F90_OBJ) : %.o : %.f90
-	$(FC) $(FFLAGS) -cpp -DDOUBLE_PREC -I../common/include -I$(FFTW_PATH)/include -c -o $@ $<
+	$(FC) $(FFLAGS) -cpp -DDOUBLE_PREC -I../common/include -I$(INCL_FFTW) -c -o $@ $<
 
-$(LIB_NAME): $(F90_OBJ) 
+$(LIB_NAME): $(F90_OBJ)
 	ar qc $@ $(F90_OBJ)
 	mv $(LIB_NAME) lib/
 	cp *.mod include/
@@ -18,9 +18,8 @@ $(LIB_NAME): $(F90_OBJ)
 dirs:
 	mkdir -p include lib
 
-clean: 
+clean:
 	rm -rf include
 	rm -rf lib
 	rm -rf *.o
 	rm -rf *.mod
-

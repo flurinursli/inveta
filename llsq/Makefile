@@ -8,11 +8,11 @@ LIB32 = libllsqf.a
 
 llsq: dirs $(LIB64) $(LIB32)
 
-$(R64_OBJ) : lib64/%.o : %.f90 
-	$(FC) $(FFLAGS) -cpp -DDOUBLE_PREC -I../common/include -c -o $@ $<
+$(R64_OBJ) : lib64/%.o : %.f90
+	$(FC) $(FFLAGS) -cpp $(MKL) -DDOUBLE_PREC -I../common/include -c -o $@ $<
 
 $(R32_OBJ) : lib32/%.o : %.f90
-	$(FC) $(FFLAGS) -cpp -I../common/include -c -o $@ $<
+	$(FC) $(FFLAGS) -cpp $(MKL) -I../common/include -c -o $@ $<
 
 $(LIB64) : $(R64_OBJ)
 	ar qc $@ $(R64_OBJ)
@@ -36,4 +36,3 @@ clean :
 	rm -rf *.mod
 
 .PHONY: clean dirs llsq
-
