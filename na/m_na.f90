@@ -26,12 +26,13 @@ MODULE m_na
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
-    SUBROUTINE na(misfun, lrange, hrange, seed, iterations, nsamplei, nsample, ncells, scaling, bestmodel, na_models, misfit, ok)
+    SUBROUTINE na(comm, misfun, lrange, hrange, seed, itermax, nsamplei, nsample, ncells, scaling, bestmodel, na_models, misfit, ok)
 
+      INTEGER(i32),                                       INTENT(IN)  :: comm                               !< mpi communicator
       REAL(r32),                                          EXTERNAL    :: misfun                             !< misfit function
       REAL(r32),                 DIMENSION(:),            INTENT(IN)  :: lrange
       REAL(r32),                 DIMENSION(SIZE(lrange)), INTENT(IN)  :: hrange
-      INTEGER(i32),                                       INTENT(IN)  :: seed, iterations, nsamplei, nsample, ncells, scaling
+      INTEGER(i32),                                       INTENT(IN)  :: seed, itermax, nsamplei, nsample, ncells, scaling
       REAL(r32),                 DIMENSION(SIZE(lrange)), INTENT(OUT) :: bestmodel
       REAL(r32),    ALLOCATABLE, DIMENSION(:),            INTENT(OUT) :: na_models
       REAL(r32),    ALLOCATABLE, DIMENSION(:),            INTENT(OUT) :: misfit
@@ -59,8 +60,8 @@ MODULE m_na
 
       ok = 0
 
-      CALL mpi_comm_size(mpi_comm_world, ntasks, ierr)
-      CALL mpi_comm_rank(mpi_comm_world, rank, ierr)
+      CALL mpi_comm_size(comm, ntasks, ierr)
+      CALL mpi_comm_rank(comm, rank, ierr)
 
       ! CALL watch_start(tictoc)
 
@@ -107,7 +108,7 @@ MODULE m_na
       timing = .false.
 
 
-      nmodels = nsamplei + iterations*nsample
+      nmodels = nsamplei + itermax*nsample
 
       ALLOCATE(misfit(nmodels), na_models(nd*nmodels), na_model(nd), xcur(nd), sum(max(nsample, nsamplei)))
       ALLOCATE(mfitord(nmodels), work_NA1(nmodels), work_NA2(nmodels))
@@ -123,7 +124,7 @@ MODULE m_na
       time_fwd = 0._r64
       ns = nsamplei
 
-      DO j = 1, iterations + 1
+      DO j = 1, itermax + 1
 
 ! if (rank == 0) print*, 'NA iteration ', j
 
@@ -150,7 +151,7 @@ MODULE m_na
 
         time_fwd = time_fwd + tic
 
-        CALL mpi_allreduce(mpi_in_place, misfit(ntot + 1), ns, mpi_real, mpi_sum, mpi_comm_world, ierr)
+        CALL mpi_allreduce(mpi_in_place, misfit(ntot + 1), ns, mpi_real, mpi_sum, comm, ierr)
 
         CALL statistics(misfit, ns, j, ntot, mfitmin, mfitminc, mfitmean, mopt, ncells, work_NA2, iwork_NA1, iwork_NA2, mfitord, &
                         ierr)
@@ -173,7 +174,7 @@ MODULE m_na
         ! tmis = tmis + t2
         ! tnat = tnat + t2
 
-        IF (j .eq. iterations + 1) EXIT
+        IF (j .eq. itermax + 1) EXIT
 
         CALL sampling(na_models, ntot, nsample, nd, nsleep, ncells, misfit, mfitord, ranget, xcur, restartNA, nclean, work_NA1)
 
@@ -212,7 +213,7 @@ MODULE m_na
       !
       ! ENDIF
 
-      CALL mpi_barrier(mpi_comm_world, ierr)
+      CALL mpi_barrier(comm, ierr)
 
 
     END SUBROUTINE na

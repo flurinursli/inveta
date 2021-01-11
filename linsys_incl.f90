@@ -6,12 +6,26 @@
 !     Date                    Description of change
 !     ====                    =====================
 !   18/12/20                  original version
+!   11/01/21                  added multiple communicators
 !
 
 weight(:) = 0._r32
 
-! loop over observations
-DO j = 1, SIZE(nobs)
+CALL mpi_comm_rank(comm2, rank, ierr)
+
+displs(0) = 0
+
+DO i = 1, SIZE(pprank2) - 1
+  displs(i) = displs(i - 1) + pprank2(i - 1)
+ENDDO
+
+j0 = displs(rank) + 1
+j1 = j0 + pprank2(rank) - 1
+
+! print*, 'j0, j1 ', world_rank, rank, j0, j1, ' l', lbound(pprank2)
+
+! loop over observations and compute difference between observed and synthetic envelopes
+DO j = j0, j1
 
   l = SUM(nobs(1:j))                   !< sum up number of points used for inversion
   n = iobs(j)                          !< number of points in current envelope
@@ -24,10 +38,64 @@ DO j = 1, SIZE(nobs)
 
   ! solve forward problem
   IF (elastic) THEN
-    CALL rtt(time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
+    CALL rtt(comm3, pprank3, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
   ELSE
-    CALL rtt(time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
+    CALL rtt(comm3, pprank3, time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
   ENDIF
+
+  k = l - nobs(j)                                        !< index of previous last point used for inversion
+  p = SUM(iobs(1:j)) - iobs(j)                           !< index of last point for previous envelope
+
+  IF (elastic) THEN
+
+    is = NINT((tpobs(j) - pdwindow * (1._r32 - fwin)) / drespl) + 1                     !< beginning direct P-window
+    is = MAX(1, is)                                                                     !< make sure we don't go below 1
+    ie = is + NINT(fwin*pdwindow / drespl)                                              !< end direct P-window
+
+    k        = k + 1
+    delta(k) = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
+
+    is = NINT((tsobs(j) - sdwindow * (1._r32 - fwin)) / drespl) + 1                     !< beginning direct S-window
+
+    ! add points from just after direct P-window to just before direct S-window (e.g. P-coda)
+    DO i = ie + 1, is - 1
+      k        = k + 1
+      delta(k) = LOG(envobs(i + p)) - LOG(envelope(i))
+    ENDDO
+
+  ENDIF
+
+  is = NINT((tsobs(j) - sdwindow * (1._r32 - fwin)) / drespl) + 1                      !< beginning direct S-window
+  is = MAX(1, is)                                                                      !< make sure we don't go below 1
+  ie = is + NINT(fwin*sdwindow / drespl)                                               !< end direct S-window
+
+  k        = k + 1
+  delta(k) = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
+
+  ! add points from just after direct S-window
+  DO i = ie + 1, n
+    k        = k + 1
+    delta(k) = LOG(envobs(i + p)) - LOG(envelope(i))
+  ENDDO
+
+  DEALLOCATE(time, envelope)
+
+ENDDO
+
+! exchange data inside communicator
+CALL mpi_allgatherv(mpi_in_place, 0, mpi_datatype_null, delta, pprank2, displs, mpi_real, comm2, ierr)
+
+! setup weights and remaning parameters
+DO j = 1, SIZE(nobs)
+
+  l = SUM(nobs(1:j))                   !< sum up number of points used for inversion
+  n = iobs(j)                          !< number of points in current envelope
+
+  ALLOCATE(time(n))
+
+  DO i = 1, n
+    time(i) = (i - 1) * drespl
+  ENDDO
 
   k = l - nobs(j)                                        !< index of previous last point used for inversion
   p = SUM(iobs(1:j)) - iobs(j)                           !< index of last point for previous envelope
@@ -47,7 +115,7 @@ DO j = 1, SIZE(nobs)
     k         = k + 1
     tobs(k)   = t
     weight(k) = SQRT(REAL(ie - is + 1, r32))
-    delta(k)  = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
+    ! delta(k)  = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
 
     is = NINT((tsobs(j) - sdwindow * (1._r32 - fwin)) / drespl) + 1                     !< beginning direct S-window
 
@@ -56,7 +124,7 @@ DO j = 1, SIZE(nobs)
       k         = k + 1
       tobs(k)   = time(i)
       weight(k) = 1._r32
-      delta(k)  = LOG(envobs(i + p)) - LOG(envelope(i))
+      ! delta(k)  = LOG(envobs(i + p)) - LOG(envelope(i))
     ENDDO
 
   ENDIF
@@ -74,17 +142,17 @@ DO j = 1, SIZE(nobs)
   k         = k + 1
   tobs(k)   = t
   weight(k) = SQRT(REAL(ie - is + 1, r32))
-  delta(k)  = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
+  ! delta(k)  = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
 
   ! add points from just after direct S-window
   DO i = ie + 1, n
     k         = k + 1
     tobs(k)   = time(i)
     weight(k) = 1._r32
-    delta(k)  = LOG(envobs(i + p)) - LOG(envelope(i))
+    ! delta(k)  = LOG(envobs(i + p)) - LOG(envelope(i))
   ENDDO
 
-  DEALLOCATE(time, envelope)
+  DEALLOCATE(time)
 
 ENDDO
 

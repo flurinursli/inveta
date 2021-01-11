@@ -14,6 +14,7 @@ MODULE m_inveta
   USE, NON_INTRINSIC :: m_strings
   USE, NON_INTRINSIC :: m_rtt
   USE, NON_INTRINSIC :: m_llsq_r32
+  USE                :: mpi
 
   IMPLICIT none
 
@@ -26,10 +27,14 @@ MODULE m_inveta
   ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --
 
   CHARACTER(:), ALLOCATABLE                 :: acf                                        !< autocorrelation function (scalar RTT)
+  INTEGER(i32)                              :: world_size, world_rank
+  INTEGER(i32)                              :: comm1, comm2, comm3
   INTEGER(i32)                              :: mode                                       !< inversion mode
   INTEGER(i32)                              :: threshold                                  !< minimum number of receivers for event
   INTEGER(i32)                              :: nsi, ns, nr, itermax, seed                 !< NA parameters
-  INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: iobs, nobs                                       !< observations per recording
+  INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: iobs, nobs                                 !< observations per recording
+  INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: pprank1, pprank2, pprank3
+  INTEGER(i32), ALLOCATABLE, DIMENSION(:,:) :: gs, ge                                     !< global indices for cartesian topology
   LOGICAL                                   :: elastic                                    !< scalar or elastic RTT
   LOGICAL                                   :: noweight                                   !< disable weighted linear regression
   REAL(r32)                                 :: hurst                                      !< Hurst exponent when acf=Von Karman
@@ -128,7 +133,9 @@ MODULE m_inveta
       CHARACTER(30),              DIMENSION(:),                     INTENT(IN) :: inverted
       REAL(r32),                  DIMENSION(:),                     INTENT(IN) :: bestmodel
       CHARACTER(:),  ALLOCATABLE                                               :: fo
-      INTEGER(i32)                                                             :: lu, lf, hf, i, j, k, l, n, p, is, ie, ok
+      INTEGER(i32)                                                             :: lu, lf, hf, i, j, k, l, n, p, is, ie, j0, j1, ok
+      INTEGER(i32)                                                             :: rank, ierr
+      INTEGER(i32),               DIMENSION(0:SIZE(pprank2)-1)                 :: displs
       REAL(r32)                                                                :: gpp, gps, gsp, gss, gi, bnu, t, const
       REAL(r32),                                                    PARAMETER  :: tau = 0.25_r32, wp = 1._r32, ws = 23.4_r32
       REAL(r32),     ALLOCATABLE, DIMENSION(:)                                 :: time, envelope
@@ -158,27 +165,12 @@ MODULE m_inveta
 
       gi = b(n + 1) / beta
 
-      ! report best fitting parameters to a file
-      IF (mode .le. 1) THEN
+      IF (world_rank .eq. 0) THEN
 
-        fo = 'bestpar_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(1))  + '.txt'
+        ! report best fitting parameters to a file
+        IF (mode .le. 1) THEN
 
-        OPEN(newunit = lu, file = fo, status = 'unknown', form = 'formatted', access = 'sequential', position = 'append',    &
-             action = 'write', iostat = ok)
-
-        IF (elastic) THEN
-          WRITE(lu, *) gpp, gps, gsp, gss, gi
-        ELSE
-          WRITE(lu, *) gss, bnu, gi
-        ENDIF
-
-        CLOSE(lu)
-
-      ELSE
-
-        DO j = 1, SIZE(nobs)
-
-          fo = 'bestpar_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(j)) + '.txt'
+          fo = 'bestpar_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(1))  + '.txt'
 
           OPEN(newunit = lu, file = fo, status = 'unknown', form = 'formatted', access = 'sequential', position = 'append',    &
                action = 'write', iostat = ok)
@@ -191,7 +183,26 @@ MODULE m_inveta
 
           CLOSE(lu)
 
-        ENDDO
+        ELSE
+
+          DO j = 1, SIZE(nobs)
+
+            fo = 'bestpar_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(j)) + '.txt'
+
+            OPEN(newunit = lu, file = fo, status = 'unknown', form = 'formatted', access = 'sequential', position = 'append',    &
+                 action = 'write', iostat = ok)
+
+            IF (elastic) THEN
+              WRITE(lu, *) gpp, gps, gsp, gss, gi
+            ELSE
+              WRITE(lu, *) gss, bnu, gi
+            ENDIF
+
+            CLOSE(lu)
+
+          ENDDO
+
+        ENDIF
 
       ENDIF
 
@@ -207,9 +218,9 @@ MODULE m_inveta
         ENDDO
 
         IF (elastic) THEN
-          CALL rtt(time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
+          CALL rtt(comm3, pprank3, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
         ELSE
-          CALL rtt(time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
+          CALL rtt(comm3, pprank3, time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
         ENDIF
 
         IF (mode .le. 1) THEN
@@ -218,17 +229,22 @@ MODULE m_inveta
           fo = 'bestfit_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(j)) + '_' + TRIM(inverted(1)) + '.txt'
         ENDIF
 
-        OPEN(newunit = lu, file = fo, status = 'unknown', form = 'formatted', access = 'sequential', action = 'write', iostat = ok)
+        IF (world_rank .eq. 0) THEN
 
-        const = EXP(b(j))
+          OPEN(newunit = lu, file = fo, status = 'unknown', form = 'formatted', access = 'sequential', action = 'write',  &
+               iostat = ok)
 
-        p = SUM(iobs(1:j)) - iobs(j)
+          const = EXP(b(j))
 
-        DO i = 1, n
-          WRITE(lu, *) time(i), envobs(i + p), const * envelope(i)
-        ENDDO
+          p = SUM(iobs(1:j)) - iobs(j)
 
-        CLOSE(lu)
+          DO i = 1, n
+            WRITE(lu, *) time(i), envobs(i + p), const * envelope(i)
+          ENDDO
+
+          CLOSE(lu)
+
+        ENDIF
 
         DEALLOCATE(time, envelope)
 
@@ -254,7 +270,8 @@ MODULE m_inveta
 
       INTEGER(i32),                                                INTENT(IN) :: nd
       REAL(r32),                 DIMENSION(nd),                    INTENT(IN) :: mpar
-      INTEGER(i32)                                                            :: i, j, k, l, n, p, is, ie, ok
+      INTEGER(i32)                                                            :: i, j, j0, j1, k, l, n, p, is, ie, ok, rank, ierr
+      INTEGER(i32),              DIMENSION(0:SIZE(pprank2)-1)                 :: displs
       REAL(r32)                                                               :: gss, gsp, gpp, gps, bnu, t
       REAL(r32),                                                   PARAMETER  :: gi = 0._r32, tau = 0.25_r32
       REAL(r32),                                                   PARAMETER  :: wp = 1._r32, ws = 23.4_r32
@@ -413,6 +430,141 @@ MODULE m_inveta
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
+    SUBROUTINE build_comms(nx, ny, nz)
+
+      INTEGER(i32),                             INTENT(IN) :: nx, ny, nz
+      INTEGER(i32)                                         :: cartopo, ierr
+      INTEGER(i32),                   PARAMETER            :: ndims = 3
+      INTEGER(i32), DIMENSION(ndims)                       :: dims, npts, coords
+      LOGICAL,                        PARAMETER            :: reorder = .true.
+      LOGICAL,      DIMENSION(ndims), PARAMETER            :: isperiodic = [.false., .false., .false.]
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      ! logic grid has "ns" points along x, number of observations along y and FFT points (for RTT) along z
+      npts = [nx, ny, nz]
+
+      ! define number of processes along each direction
+      dims(1) = MIN(world_size, nx)
+      dims(2) = MIN(world_size / dims(1), ny)                       !< equal to 1 when "mode=0"
+      dims(3) = world_size / (dims(1) * dims(2))
+
+if (world_rank == 0) print*, 'proc grid ', dims
+
+      ! create topology
+      CALL mpi_cart_create(mpi_comm_world, ndims, dims, isperiodic, reorder, cartopo, ierr)
+
+      ! return process coordinates in current topology
+      CALL mpi_cart_coords(cartopo, world_rank, 3, coords, ierr)
+
+      ! return first/last index along each direction for the calling process. Note: first point has first index equal to 1.
+      CALL coords2index(npts, dims, coords, gs(:, world_rank), ge(:, world_rank))
+
+      ! make all processes aware of global indices
+      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, gs, 3, mpi_integer, mpi_comm_world, ierr)
+      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, ge, 3, mpi_integer, mpi_comm_world, ierr)
+
+      ! release cartesian communicator
+      CALL mpi_comm_free(cartopo, ierr)
+
+      ! build all three communicators
+      CALL build_pencil(0, comm1, pprank1)
+      CALL build_pencil(1, comm2, pprank2)
+      CALL build_pencil(2, comm3, pprank3)
+
+    END SUBROUTINE build_comms
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
+    SUBROUTINE destroy_comms()
+
+      INTEGER(i32) :: ierr
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      DEALLOCATE(pprank1, pprank2, pprank3)
+
+      CALL mpi_comm_free(comm1, ierr)
+      CALL mpi_comm_free(comm2, ierr)
+      CALL mpi_comm_free(comm3, ierr)
+
+    END SUBROUTINE destroy_comms
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
+    SUBROUTINE build_pencil(dir, newcomm, n)
+
+      ! Purpose:
+      ! To group processes falling inside the same pencil oriented along a specific direction "dir" into new communicator "newcomm",
+      ! whose size is "ntasks". The rank of the calling process in "newcomm" is "rank" and the number of points for each of them is
+      ! assigned to "n".
+      !
+      ! Revisions:
+      !     Date                    Description of change
+      !     ====                    =====================
+      !   11/01/21                  original version
+      !
+
+      INTEGER(i32),                                        INTENT(IN)  :: dir
+      INTEGER(i32),                                        INTENT(OUT) :: newcomm
+      INTEGER(i32), ALLOCATABLE, DIMENSION(:),             INTENT(OUT) :: n
+      INTEGER(i32)                                                     :: i, ierr, rank, ntasks
+      INTEGER(i32),              DIMENSION(0:world_size-1)             :: color
+      LOGICAL,                   DIMENSION(2)                          :: bool
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      ! group processes into pencils
+      DO i = 0, world_size - 1
+
+        color(i) = 0
+
+        ! pencil oriented along x-axis
+        IF (dir .eq. 0) THEN
+          bool(1) = (gs(2, i) .eq. gs(2, world_rank)) .and. (ge(2, i) .eq. ge(2, world_rank))
+          bool(2) = (gs(3, i) .eq. gs(3, world_rank)) .and. (ge(3, i) .eq. ge(3, world_rank))
+        ! pencil oriented along y-axis
+        ELSEIF (dir .eq. 1) THEN
+          bool(1) = (gs(1, i) .eq. gs(1, world_rank)) .and. (ge(1, i) .eq. ge(1, world_rank))
+          bool(2) = (gs(3, i) .eq. gs(3, world_rank)) .and. (ge(3, i) .eq. ge(3, world_rank))
+        ! pencil oriented along z-axis
+        ELSEIF (dir .eq. 2) THEN
+          bool(1) = (gs(1, i) .eq. gs(1, world_rank)) .and. (ge(1, i) .eq. ge(1, world_rank))
+          bool(2) = (gs(2, i) .eq. gs(2, world_rank)) .and. (ge(2, i) .eq. ge(2, world_rank))
+        ENDIF
+
+        IF (ALL(bool .eqv. .true.)) color(i) = i + 1
+
+      ENDDO
+
+      ! process belonging to the same pencil have same color
+      color(world_rank) = MAXVAL(color, dim = 1)
+
+      ! create communicator subgroup
+      CALL mpi_comm_split(mpi_comm_world, color(world_rank), world_rank, newcomm, ierr)
+
+      ! process id and communicator size
+      CALL mpi_comm_rank(newcomm, rank, ierr)
+      CALL mpi_comm_size(newcomm, ntasks, ierr)
+
+      ALLOCATE(n(0:ntasks - 1))
+
+      ! number of points along pencil direction for calling process
+      n(rank) = ge(dir + 1, world_rank) - gs(dir + 1, world_rank) + 1
+
+      ! make whole communicator aware of points for each process
+      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, n, 1, mpi_integer, newcomm, ierr)
+
+    END SUBROUTINE build_pencil
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
 END MODULE m_inveta
 
 ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
@@ -458,7 +610,7 @@ PROGRAM main
   CHARACTER(10), ALLOCATABLE, DIMENSION(:)   :: code
   CHARACTER(30), ALLOCATABLE, DIMENSION(:)   :: inverted, blacklisted
   COMPLEX(r32),  ALLOCATABLE, DIMENSION(:)   :: analytic, spectrum
-  INTEGER(i32)                               :: ierr, ok, lu, nproc, rank, n, i, j, k, p, l, is, ie, pts
+  INTEGER(i32)                               :: ierr, ok, lu, n, i, j, k, p, l, is, ie, pts, comm
   INTEGER(i32),               DIMENSION(2)   :: v
   REAL(r32)                                  :: dt, t, gss, gpp, gsp, gps, bnu
   REAL(r64)                                  :: tic
@@ -469,15 +621,18 @@ PROGRAM main
 
   CALL mpi_init(ierr)
 
-  CALL mpi_comm_size(mpi_comm_world, nproc, ierr)
-  CALL mpi_comm_rank(mpi_comm_world, rank, ierr)
+  CALL mpi_comm_size(mpi_comm_world, world_size, ierr)
+  CALL mpi_comm_rank(mpi_comm_world, world_rank, ierr)
 
-  IF (rank .eq. 0) CALL set_log_module(ok, screen = .true.)
+  ! "gs"/"ge" are specified in "m_inveta" and store first/last global index along each direction for all processes
+  ALLOCATE(gs(3, 0:world_size-1), ge(3, 0:world_size-1))
+
+  IF (world_rank .eq. 0) CALL set_log_module(ok, screen = .true.)
 
   ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --
   ! --------------------------------- read main input file and stop execution if error is raised -----------------------------------
 
-  IF (rank .eq. 0) CALL read_input_file(ok)
+  IF (world_rank .eq. 0) CALL read_input_file(ok)
 
   CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
 
@@ -486,7 +641,7 @@ PROGRAM main
   ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --
   ! ------------------------------------------------- echo input parameters  -------------------------------------------------------
 
-  IF (rank .eq. 0) THEN
+  IF (world_rank .eq. 0) THEN
 
     CALL update_log('**********************************************************************************************')
     CALL update_log('INVETA v1.0')
@@ -588,21 +743,21 @@ PROGRAM main
 
   CALL mpi_bcast(n, 1, mpi_int, 0, mpi_comm_world, ierr)
 
-  IF (rank .ne. 0) ALLOCATE(fbands(2, n))
+  IF (world_rank .ne. 0) ALLOCATE(fbands(2, n))
   CALL mpi_bcast(fbands, n*2, mpi_real, 0, mpi_comm_world, ierr)
 
   n = SIZE(recvr)
 
   CALL mpi_bcast(n, 1, mpi_int, 0, mpi_comm_world, ierr)
 
-  IF (rank .ne. 0) ALLOCATE(recvr(n))
+  IF (world_rank .ne. 0) ALLOCATE(recvr(n))
 
   DO i = 1, SIZE(recvr)
 
     n = SIZE(recvr(i)%ts)
     CALL mpi_bcast(n, 1, mpi_int, 0, mpi_comm_world, ierr)
 
-    IF (rank .ne. 0) ALLOCATE(recvr(i)%event(n), recvr(i)%code(n), recvr(i)%tp(n), recvr(i)%ts(n))
+    IF (world_rank .ne. 0) ALLOCATE(recvr(i)%event(n), recvr(i)%code(n), recvr(i)%tp(n), recvr(i)%ts(n))
 
     CALL mpi_bcast(recvr(i)%event, LEN(recvr(i)%event(1))*n, mpi_character, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(recvr(i)%code, LEN(recvr(i)%code)*n, mpi_character, 0, mpi_comm_world, ierr)
@@ -616,21 +771,21 @@ PROGRAM main
 
   CALL mpi_bcast(fwin, 1, mpi_real, 0, mpi_comm_world, ierr)
 
-  IF (rank .ne. 0) ALLOCATE(etass(2))
+  IF (world_rank .ne. 0) ALLOCATE(etass(2))
   CALL mpi_bcast(etass, 2, mpi_real, 0, mpi_comm_world, ierr)
 
   CALL mpi_bcast(sdwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
   CALL mpi_bcast(scwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
 
   IF (elastic) THEN
-    IF (rank .ne. 0) ALLOCATE(etass2pp(2), etaps2pp(2))
+    IF (world_rank .ne. 0) ALLOCATE(etass2pp(2), etaps2pp(2))
     CALL mpi_bcast(etass2pp, 2, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(etaps2pp, 2, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(pdwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(pcwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
   ELSE
-    IF (rank .ne. 0) ALLOCATE(nu(2))
-    IF (rank .ne. 0) ALLOCATE(CHARACTER(2) :: acf)
+    IF (world_rank .ne. 0) ALLOCATE(nu(2))
+    IF (world_rank .ne. 0) ALLOCATE(CHARACTER(2) :: acf)
     CALL mpi_bcast(nu, 2, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(hurst, 1, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(acf, 2, mpi_character, 0, mpi_comm_world, ierr)
@@ -650,6 +805,9 @@ PROGRAM main
   ENDIF
 
   ALLOCATE(bestmodel(SIZE(lrange)))
+
+  ! arrange available processes into logic grid
+  IF (mode .eq. 0) CALL build_comms(ns, 1, query_fft_size())
 
   DO k = 1, SIZE(fbands, 2)                         !< loop over frequency bands
 
@@ -697,7 +855,7 @@ PROGRAM main
 
           IF (ALLOCATED(timeseries)) DEALLOCATE(timeseries, time)
 
-          IF (rank .eq. 0) THEN
+          IF (world_rank .eq. 0) THEN
             ! this is a hack to deal with irregular file naming convention
             DO i = 1, 4
               fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_CH_' + TRIM(recvr(l)%code(p)) + '_HH[ENZ]_' +  &
@@ -718,16 +876,16 @@ PROGRAM main
           CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
 
           IF (ok .ne. 0) THEN
-            IF (rank .eq. 0) CALL report_error('File ' + fo + ' not found in folder ' + recvr(l)%folder)
+            IF (world_rank .eq. 0) CALL report_error('File ' + fo + ' not found in folder ' + recvr(l)%folder)
             CALL mpi_barrier(mpi_comm_world, ierr)
             CALL mpi_abort(mpi_comm_world, ok, ierr)
           ENDIF
 
-          IF (rank .eq. 0) v = SHAPE(timeseries)
+          IF (world_rank .eq. 0) v = SHAPE(timeseries)
 
           CALL mpi_bcast(v, 2, mpi_int, 0, mpi_comm_world, ierr)
 
-          IF (rank .ne. 0) ALLOCATE(timeseries(v(1), v(2)))
+          IF (world_rank .ne. 0) ALLOCATE(timeseries(v(1), v(2)))
 
           CALL mpi_bcast(timeseries, PRODUCT(v), mpi_real, 0, mpi_comm_world, ierr)
           CALL mpi_bcast(dt, 1, mpi_real, 0, mpi_comm_world, ierr)
@@ -868,16 +1026,18 @@ PROGRAM main
           IF (mode .eq. 0) THEN
             IF (ALLOCATED(code)) THEN             !< obviously, do something only if receiver has recorded current event
 
-              IF (rank .eq. 0) CALL update_log('Inverting event ' + TRIM(current) + ' for receiver ' + TRIM(code(1)) +  &
+              IF (world_rank .eq. 0) CALL update_log('Inverting event ' + TRIM(current) + ' for receiver ' + TRIM(code(1)) +  &
                                                ' in the frequency band ' + num2char(fbands(1,k), notation='f', precision=1) +  &
                                                '-' + num2char(fbands(2,k), notation='f', precision=1) + 'Hz')
 
-              CALL na(misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+              CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
 
-              IF (rank .eq. 0) THEN
+              ! write best-fitting model to disk
+              CALL bestfit(k, [recvr(l)%code(1)], [current], bestmodel)
 
-                ! write best-fitting model and explored parameters space to disk
-                CALL bestfit(k, [recvr(l)%code(1)], [current], bestmodel)
+              IF (world_rank .eq. 0) THEN
+
+                ! write explored parameters space to disk
                 CALL write_search(k, [recvr(l)%code(1)], [current], sampled, fit)
 
                 CALL update_log(num2char('Models explored', width=29, fill='.') + num2char(SIZE(fit),width=17, justify='r') + '|')
@@ -928,11 +1088,11 @@ PROGRAM main
 
         IF (mode .eq. 0) THEN
           IF (ALLOCATED(inverted)) THEN
-            IF (rank .eq. 0) CALL update_log('For receiver ' + TRIM(recvr(l)%code(1)) + ' inverted ' + num2char(SIZE(inverted)) +  &
-                                             ' event(s)')
+            IF (world_rank .eq. 0) CALL update_log('For receiver ' + TRIM(recvr(l)%code(1)) + ' inverted ' +    &
+                                                    num2char(SIZE(inverted)) + ' event(s)')
             DEALLOCATE(inverted)
           ELSE
-            IF (rank .eq. 0) CALL update_log('For receiver ' + TRIM(recvr(l)%code(1)) + ' no events inverted')
+            IF (world_rank .eq. 0) CALL update_log('For receiver ' + TRIM(recvr(l)%code(1)) + ' no events inverted')
           ENDIF
         ENDIF
 
@@ -942,17 +1102,24 @@ PROGRAM main
         IF (mode .eq. 1) THEN
           IF (ALLOCATED(code)) THEN                  !< obviously, do something only if receiver has recorded some events
 
-            IF (rank .eq. 0) CALL update_log('Inverting ' + num2char(SIZE(inverted)) + ' event(s) for receiver ' +  &
+            IF (world_rank .eq. 0) CALL update_log('Inverting ' + num2char(SIZE(inverted)) + ' event(s) for receiver ' +  &
                                               TRIM(recvr(l)%code(1)) + ' in the frequency band ' + num2char(fbands(1,k),  &
                                               notation='f', precision=1) + '-' + num2char(fbands(2,k), notation='f', precision=1)+ &
                                               'Hz')
 
-            CALL na(misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+            ! arrange available processes into logic grid
+            CALL build_comms(ns, SIZE(nobs), query_fft_size())
 
-            IF (rank .eq. 0) THEN
+            CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
 
-              ! write best-fitting model and explored parameters space to disk
-              CALL bestfit(k, [recvr(l)%code(1)], inverted, bestmodel)
+            ! write best-fitting model to disk
+            CALL bestfit(k, [recvr(l)%code(1)], inverted, bestmodel)
+
+            CALL destroy_comms()
+
+            IF (world_rank .eq. 0) THEN
+
+              ! write explored parameters space to disk
               CALL write_search(k, [recvr(l)%code(1)], inverted, sampled, fit)
 
               CALL update_log(num2char('Models explored', width=29, fill='.') + num2char(SIZE(fit),width=17, justify='r') + '|')
@@ -996,7 +1163,7 @@ PROGRAM main
             DEALLOCATE(code, inverted)
 
           ELSE
-            IF (rank .eq. 0) CALL update_log('For receiver ' + TRIM(recvr(l)%code(1)) + ' no events inverted')
+            IF (world_rank .eq. 0) CALL update_log('For receiver ' + TRIM(recvr(l)%code(1)) + ' no events inverted')
 
           ENDIF
         ENDIF
@@ -1012,19 +1179,26 @@ PROGRAM main
 
         IF (SIZE(code) .ge. threshold) THEN        !< do something only if enough receivers recorded the same event
 
-          IF (rank .eq. 0) THEN
+          IF (world_rank .eq. 0) THEN
             CALL update_log('Inverting ' + num2char(SIZE(code)) + ' recordings for event ' + TRIM(current)  +  &
                             ' in the frequency band ' + num2char(fbands(1,k), precision=1) + '-' +             &
                             num2char(fbands(2,k), precision=1) + 'Hz')
             CALL update_log(num2char('List of receivers', width=29, fill='.') + show(code), blankline = .false.)
           ENDIF
 
-          CALL na(misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+          ! arrange available processes into logic grid
+          CALL build_comms(ns, SIZE(nobs), query_fft_size())
 
-          IF (rank .eq. 0) THEN
+          CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
 
-            ! write best-fitting model and explored parameters space to disk
-            CALL bestfit(k, code, [current], bestmodel)
+          ! write best-fitting model to disk and explored parameters space to disk
+          CALL bestfit(k, code, [current], bestmodel)
+
+          CALL destroy_comms()
+
+          IF (world_rank .eq. 0) THEN
+
+            ! write explored parameters space to disk
             CALL write_search(k, code, [current], sampled, fit)
 
             CALL update_log(num2char('Models explored', width=29, fill='.') + num2char(SIZE(fit),width=17, justify='r') + '|')
@@ -1101,7 +1275,11 @@ PROGRAM main
 
   ENDDO                                 !<  end loop over frequency bands
 
-  IF (rank .eq. 0) CALL update_log('Program completed')
+  IF (mode .eq. 0) CALL destroy_comms()
+
+  DEALLOCATE(gs, ge)
+
+  IF (world_rank .eq. 0) CALL update_log('Program completed')
 
   CALL mpi_finalize(ierr)
 
@@ -1723,6 +1901,37 @@ SUBROUTINE watch_stop(tictoc, comm)
   tictoc = mpi_wtime() - tictoc
 
 END SUBROUTINE watch_stop
+
+! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
+!===================================================================================================================================
+! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
+
+SUBROUTINE coords2index(npts, dims, coords, fs, fe)
+
+  ! Purpose:
+  ! To return first ("fs") and last ("fe") grid index for a calling process having "coords" coordinates in a given cartesian topology,
+  ! the latter characterized by "npts" points and "dims" processes.
+  !
+  ! Revisions:
+  !     Date                    Description of change
+  !     ====                    =====================
+  !   11/01/21                  original version
+  !
+
+  USE, NON_INTRINSIC :: m_precisions
+
+  INTEGER(i32), DIMENSION(3), INTENT(IN)  :: npts, dims, coords
+  INTEGER(i32), DIMENSION(3), INTENT(OUT) :: fs, fe
+  INTEGER(i32)                            :: i
+
+  !---------------------------------------------------------------------------------------------------------------------------------
+
+  DO i = 1, 3
+    fs(i) = 1 + INT( REAL(npts(i)) / REAL(dims(i)) * REAL(coords(i)) )
+    fe(i) = INT( REAL(npts(i)) / REAL(dims(i)) * REAL(coords(i) + 1) )
+  ENDDO
+
+END SUBROUTINE coords2index
 
 ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
 !===================================================================================================================================
