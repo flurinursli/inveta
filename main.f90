@@ -14,6 +14,7 @@ MODULE m_inveta
   USE, NON_INTRINSIC :: m_strings
   USE, NON_INTRINSIC :: m_rtt
   USE, NON_INTRINSIC :: m_llsq_r32
+  USE, NON_INTRINSIC :: m_logfile
   USE                :: mpi
 
   IMPLICIT none
@@ -135,7 +136,7 @@ MODULE m_inveta
       CHARACTER(:),  ALLOCATABLE                                               :: fo
       INTEGER(i32)                                                             :: lu, lf, hf, i, j, k, l, n, p, is, ie, j0, j1, ok
       INTEGER(i32)                                                             :: rank, ierr
-      INTEGER(i32),               DIMENSION(0:SIZE(pprank2)-1)                 :: displs
+      INTEGER(i32),               DIMENSION(0:SIZE(pprank2)-1)                 :: displs, pprank
       REAL(r32)                                                                :: gpp, gps, gsp, gss, gi, bnu, t, const
       REAL(r32),                                                    PARAMETER  :: tau = 0.25_r32, wp = 1._r32, ws = 23.4_r32
       REAL(r32),     ALLOCATABLE, DIMENSION(:)                                 :: time, envelope
@@ -163,22 +164,23 @@ MODULE m_inveta
 
       n = SIZE(nobs)
 
-      gi = b(n + 1) / beta
+      gi = b(n + 1) !/ beta
 
       IF (world_rank .eq. 0) THEN
 
         ! report best fitting parameters to a file
         IF (mode .le. 1) THEN
 
-          fo = 'bestpar_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(1))  + '.txt'
+          ! fo = 'bestpar_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(1))  + '.txt'
+          fo = 'bestpar_' + TRIM(code(1)) + '.txt'
 
           OPEN(newunit = lu, file = fo, status = 'unknown', form = 'formatted', access = 'sequential', position = 'append',    &
                action = 'write', iostat = ok)
 
           IF (elastic) THEN
-            WRITE(lu, *) gpp, gps, gsp, gss, gi
+            WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi
           ELSE
-            WRITE(lu, *) gss, bnu, gi
+            WRITE(lu, *) mean(fbands(:,f)), gss, bnu, gi
           ENDIF
 
           CLOSE(lu)
@@ -187,15 +189,16 @@ MODULE m_inveta
 
           DO j = 1, SIZE(nobs)
 
-            fo = 'bestpar_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(j)) + '.txt'
+            ! fo = 'bestpar_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(j)) + '.txt'
+            fo = 'bestpar_' + TRIM(code(j)) + '.txt'
 
             OPEN(newunit = lu, file = fo, status = 'unknown', form = 'formatted', access = 'sequential', position = 'append',    &
                  action = 'write', iostat = ok)
 
             IF (elastic) THEN
-              WRITE(lu, *) gpp, gps, gsp, gss, gi
+              WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi
             ELSE
-              WRITE(lu, *) gss, bnu, gi
+              WRITE(lu, *) mean(fbands(:,f)), gss, bnu, gi
             ENDIF
 
             CLOSE(lu)
@@ -271,7 +274,7 @@ MODULE m_inveta
       INTEGER(i32),                                                INTENT(IN) :: nd
       REAL(r32),                 DIMENSION(nd),                    INTENT(IN) :: mpar
       INTEGER(i32)                                                            :: i, j, j0, j1, k, l, n, p, is, ie, ok, rank, ierr
-      INTEGER(i32),              DIMENSION(0:SIZE(pprank2)-1)                 :: displs
+      INTEGER(i32),              DIMENSION(0:SIZE(pprank2)-1)                 :: displs, pprank
       REAL(r32)                                                               :: gss, gsp, gpp, gps, bnu, t
       REAL(r32),                                                   PARAMETER  :: gi = 0._r32, tau = 0.25_r32
       REAL(r32),                                                   PARAMETER  :: wp = 1._r32, ws = 23.4_r32
@@ -449,7 +452,8 @@ MODULE m_inveta
       dims(2) = MIN(world_size / dims(1), ny)                       !< equal to 1 when "mode=0"
       dims(3) = world_size / (dims(1) * dims(2))
 
-if (world_rank == 0) print*, 'proc grid ', dims
+      IF (world_rank .eq. 0) CALL update_log(num2char('Processors grid', width=29, fill='.') + num2char('[' + num2char(dims(1)) +  &
+                             ', ' + num2char(dims(2)) + ', ' + num2char(dims(3)) + ']', width=18, justify='r'))
 
       ! create topology
       CALL mpi_cart_create(mpi_comm_world, ndims, dims, isperiodic, reorder, cartopo, ierr)
@@ -688,7 +692,7 @@ PROGRAM main
                       num2char('S', width=13, justify='r') + '|', blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(pcwindow, notation = 'f', width=17, precision=3, justify='r') + '|' +  &
                       num2char(scwindow, notation='f', width=13, precision=3, justify='r') + '|', blankline = .false.)
-      CALL update_log(num2char('Inversion parameters', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + '|' + &
+      CALL update_log(num2char('Parameters search range', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + '|' + &
                       num2char('EtaSS/PP', width=13, justify='r') + '|' + num2char('EtaPS/PP', width=13, justify='r') + '|',  &
                       blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(etass(1),    notation='s', width=8, precision=1, justify='r') + ',' + &
@@ -707,7 +711,7 @@ PROGRAM main
                       blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(scwindow, notation = 'f', width=17, precision=3, justify='r') + '|',   &
                       blankline = .false.)
-      CALL update_log(num2char('Inversion parameters', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + '|' +  &
+      CALL update_log(num2char('Parameters search range', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + '|' +  &
                       num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(etass(1), notation='s', width=8, precision=1, justify='r') + ',' +  &
                       num2char(etass(2),    notation='s', width=8, precision=1) + '|' +    &
@@ -1027,7 +1031,7 @@ PROGRAM main
             IF (ALLOCATED(code)) THEN             !< obviously, do something only if receiver has recorded current event
 
               IF (world_rank .eq. 0) CALL update_log('Inverting event ' + TRIM(current) + ' for receiver ' + TRIM(code(1)) +  &
-                                               ' in the frequency band ' + num2char(fbands(1,k), notation='f', precision=1) +  &
+                                              ' in the frequency band ' + num2char(fbands(1,k), notation='f', precision=1) +  &
                                                '-' + num2char(fbands(2,k), notation='f', precision=1) + 'Hz')
 
               CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)

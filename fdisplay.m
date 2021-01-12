@@ -1,5 +1,9 @@
 function [] = fdisplay(folder, string, maxcol);
 
+% show observed (blue) and best fitting synthetic envelope (red). Plots can be
+% arranged in "maxcol" columns.
+% e.g.: fdisplay('.', '8-16_MTI03_*', 3);
+
 if isempty(folder); folder = pwd; end;
 
 files = dir([folder '/bestfit*' string '*.txt']);

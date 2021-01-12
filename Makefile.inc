@@ -8,7 +8,8 @@ FFLAGS = -g -std=f2008 -fcheck=all -fbacktrace
 #FFLAGS = -O3 -xHost
 
 # flags for lapack, fftw, etc.
-#MKL       = -DMKL
+#MKL = -DMKL
+MPI = -DMPI
 #INCL_FFTW = /opt/intel/mkl/include/fftw
 INCL_FFTW = $(FFTW_PATH)/include
 
