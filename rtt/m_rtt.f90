@@ -139,7 +139,13 @@ MODULE m_rtt
       rank = rank + 1
 #endif
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_start(tictoc(1), comm)
+#else
       CALL watch_start(tictoc(1))
+#endif
+#endif
 
       ! assign average velocity to global variable
       beta = vel
@@ -172,12 +178,24 @@ MODULE m_rtt
       ! angular frequency resolution
       dw = 2.0 * pi / nfft / dt
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_start(tictoc(2), comm)
+#else
       CALL watch_start(tictoc(2))
+#endif
+#endif
 
       ! return expansion coefficients of scattering function ("lmax", "coef")
       CALL scattering_pattern(acf, REAL(hurst, r64), REAL(nu, r64), ok)
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_stop(tictoc(2), comm)
+#else
       CALL watch_stop(tictoc(2))
+#endif
+#endif
 
       ! multiply expansion and scattering coefficients
       coef(:) = coef(:) * eta_s
@@ -188,23 +206,47 @@ MODULE m_rtt
 
       ALLOCATE(wigner(nwigner))
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_start(tictoc(3), comm)
+#else
       CALL watch_start(tictoc(3))
+#endif
+#endif
 
       ! pre-compute wigner 3j symbol values
       CALL fill_wigner()
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_stop(tictoc(3), comm)
+#else
       CALL watch_stop(tictoc(3))
+#endif
+#endif
 
       ALLOCATE(gammal(2*lmax - 1))
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_start(tictoc(4), comm)
+#else
       CALL watch_start(tictoc(4))
+#endif
+#endif
 
       ! compute and store a factor used to evaluate spherical Bessel functions of order larger than 1
       DO i = 2, 2*lmax
         gammal(i - 1) = SQRT(pi) * GAMMA(i + 1._r64) / GAMMA(i + 1.5_r64)
       ENDDO
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_stop(tictoc(4), comm)
+#else
       CALL watch_stop(tictoc(4))
+#endif
+#endif
 
       ! select functions for integration
       re_fun => re_f0_m
@@ -224,7 +266,13 @@ MODULE m_rtt
       i1 = i0 + pprank(rank) - 1
 #endif
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_start(tictoc(5), comm)
+#else
       CALL watch_start(tictoc(5))
+#endif
+#endif
 
       !$omp parallel do default(shared) private(i, w) reduction(max: ok) firstprivate(gammal, coef, wigner)
       DO i = i0, i1
@@ -250,7 +298,13 @@ MODULE m_rtt
       ENDDO
       !$omp end parallel do
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_stop(tictoc(5), comm)
+#else
       CALL watch_stop(tictoc(5))
+#endif
+#endif
 
 #ifdef MPI
       ! exchange data inside communicator
@@ -259,7 +313,13 @@ MODULE m_rtt
 
       DEALLOCATE(gammal, wigner)
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_start(tictoc(6), comm)
+#else
       CALL watch_start(tictoc(6))
+#endif
+#endif
 
       CALL make_fftw_plan([nfft])
       CALL ifft(e_multi, spectrum)
@@ -280,7 +340,13 @@ MODULE m_rtt
 
       CALL interpolate(e_time, e_multi, dtime, em)
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_stop(tictoc(6), comm)
+#else
       CALL watch_stop(tictoc(6))
+#endif
+#endif
 
       ! now "dt" is the final time-step
       dt = time(2) - time(1)
@@ -381,9 +447,13 @@ MODULE m_rtt
 
       DEALLOCATE(coef)
 
-      CALL watch_stop(tictoc(1))
-
 #ifdef DEBUG
+
+#ifdef MPI
+      CALL watch_stop(tictoc(1), comm)
+#else
+      CALL watch_stop(tictoc(1))
+#endif
 
       OPEN(newunit = lu, file = 'rtt_nonisotropic.txt', status = 'unknown', form = 'formatted', access = 'sequential', &
            action = 'write', iostat = ok)
@@ -1069,7 +1139,13 @@ MODULE m_rtt
       rank = rank + 1
 #endif
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_start(tictoc(1), comm)
+#else
       CALL watch_start(tictoc(1))
+#endif
+#endif
 
       ! assign input parameters to global variables
       e0_p  = wp
@@ -1134,7 +1210,13 @@ MODULE m_rtt
       i1 = i0 + pprank(rank) - 1
 #endif
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_start(tictoc(2), comm)
+#else
       CALL watch_start(tictoc(2))
+#endif
+#endif
 
       !$omp parallel do default(shared) private(i, w) reduction(max: ok)
       DO i = i0, i1
@@ -1160,14 +1242,26 @@ MODULE m_rtt
       ENDDO
       !$omp end parallel do
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_stop(tictoc(2), comm)
+#else
       CALL watch_stop(tictoc(2))
+#endif
+#endif
 
 #ifdef MPI
       ! exchange data inside communicator
       CALL mpi_allgatherv(mpi_in_place, 0, mpi_datatype_null, spectrum, pprank, displs, mpi_double_complex, comm, ierr)
 #endif
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_start(tictoc(3), comm)
+#else
       CALL watch_start(tictoc(3))
+#endif
+#endif
 
       CALL make_fftw_plan([nfft])
       CALL ifft(e_multi, spectrum)
@@ -1191,7 +1285,13 @@ MODULE m_rtt
 
       CALL interpolate(e_time, e_multi, dtime, em)
 
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_stop(tictoc(3), comm)
+#else
       CALL watch_stop(tictoc(3))
+#endif
+#endif
 
       ! now "dt" is the actual output time-step
       dt = time(2) - time(1)
@@ -1329,7 +1429,14 @@ MODULE m_rtt
       !   envelope = amin
       ! END WHERE
 
+
+#ifdef DEBUG
+#ifdef MPI
+      CALL watch_stop(tictoc(1), comm)
+#else
       CALL watch_stop(tictoc(1))
+#endif
+#endif
 
 #ifdef DEBUG
 

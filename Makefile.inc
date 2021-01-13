@@ -1,8 +1,8 @@
 FC = mpif90
 
 # flags GCC
-FFLAGS = -g -std=f2008 -fcheck=all -fbacktrace
-#FFLAGS = -O3 -std=f2008 -march=native
+#FFLAGS = -g -std=f2008 -fcheck=all -fbacktrace
+FFLAGS = -O3 -std=f2008 -march=native
 
 # flags INTEL
 #FFLAGS = -O3 -xHost
