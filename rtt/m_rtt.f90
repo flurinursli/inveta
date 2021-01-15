@@ -15,6 +15,7 @@ MODULE m_rtt
   !     Date                    Description of change
   !     ====                    =====================
   !   02/09/20                  original version
+  !   11/01/21                  added mpi directives
   !
 
   USE, INTRINSIC     :: iso_c_binding
@@ -103,8 +104,8 @@ MODULE m_rtt
       !     Date                    Description of change
       !     ====                    =====================
       !   29/03/19                  original version
-      !   02/09/20
-      !
+      !   11/01/21                  added mpi directives
+      !   15/01/21                  increased relative accuracy (integration)
 
 #ifdef MPI
       INTEGER(i32),                         INTENT(IN)  :: comm
@@ -167,7 +168,8 @@ MODULE m_rtt
       wi = LOG(1.e+05_r64 * a(2) / a(1)) / tcalc
 
       ! set absolute accuracy for numerical integration. Divide by 100 to set relative accuracy to 10^-2
-      epsabs = MAX(MIN(a(1), a(2)) / 100._r64, EPSILON(1._r64))
+      ! value raised to 200 in order to further reduce numerical noise
+      epsabs = MAX(MIN(a(1), a(2)) / 200._r64, EPSILON(1._r64))
 
       ! define minimum wavenumber for integration (kmin << pi / L, eq. 4.125 of Jensen et al., 2011)
       kmin = pi / (beta * tcalc + sr) / 5._r64
@@ -1104,7 +1106,7 @@ MODULE m_rtt
       !     Date                    Description of change
       !     ====                    =====================
       !   29/03/19                  original version
-      !   02/09/20
+      !   11/01/21                  added mpi directives
       !
 
 #ifdef MPI

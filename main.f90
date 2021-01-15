@@ -164,7 +164,8 @@ MODULE m_inveta
 
       n = SIZE(nobs)
 
-      gi = b(n + 1) !/ beta
+      ! divide "b" by velocity to obtain intrinsic attenuation 
+      gi = b(n + 1) / beta
 
       IF (world_rank .eq. 0) THEN
 
@@ -178,9 +179,9 @@ MODULE m_inveta
                action = 'write', iostat = ok)
 
           IF (elastic) THEN
-            WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi
+            WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi * beta
           ELSE
-            WRITE(lu, *) mean(fbands(:,f)), gss, bnu, gi
+            WRITE(lu, *) mean(fbands(:,f)), gss, bnu, gi * beta
           ENDIF
 
           CLOSE(lu)
@@ -196,9 +197,9 @@ MODULE m_inveta
                  action = 'write', iostat = ok)
 
             IF (elastic) THEN
-              WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi
+              WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi * beta
             ELSE
-              WRITE(lu, *) mean(fbands(:,f)), gss, bnu, gi
+              WRITE(lu, *) mean(fbands(:,f)), gss, bnu, gi * beta
             ENDIF
 
             CLOSE(lu)

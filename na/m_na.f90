@@ -107,7 +107,6 @@ MODULE m_na
 
       timing = .false.
 
-
       nmodels = nsamplei + itermax*nsample
 
       ALLOCATE(misfit(nmodels), na_models(nd*nmodels), na_model(nd), xcur(nd), sum(max(nsample, nsamplei)))
@@ -122,6 +121,7 @@ MODULE m_na
       ncald = 0
       nupd  = 0
       time_fwd = 0._r64
+      tic = 0._r64
       ns = nsamplei
 
       DO j = 1, itermax + 1
