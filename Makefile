@@ -7,7 +7,7 @@ all : common llsq fft filter interpolation rtt na $(OBJ)
 
 # how to get main.o
 $(OBJ) : %.o : %.f90
-	$(FC) $(FFLAGS) -cpp -Icommon/include -Illsq/include32 -Iinterpolation/include32 -Ifft/include -Ifilter/include -Illsq/include32 -Irtt/include -Ina/include -c -o $@ $<
+	$(FC) $(FFLAGS) -fopenmp -cpp $(DEBUG) -Icommon/include -Illsq/include32 -Iinterpolation/include32 -Ifft/include -Ifilter/include -Illsq/include32 -Irtt/include -Ina/include -c -o $@ $<
 
 common:
 	cd $@; $(MAKE) $@ $<
