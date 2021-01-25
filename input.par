@@ -38,7 +38,7 @@ DIRECT Pwin = 3., Swin = 5., Factor = 100%,
 CODA Pwin = 4., Swin = 6.,
 
 # Set Neighbourhood Algorithm parameters
-InitialModels = 16, Models = 8, Resampled = 2, Iterations = 15, Seed = 6572,
+InitialModels = 16, Models = 8, Resampled = 2, Iterations = 5, Seed = 6572,
 #InitialModels = 8, Models = 8, Resampled = 2, Iterations = 15, Seed = 6572,
 
 # List of all events for all stations. "Folder" contains recordings, whereas "File" P-/S- arrival times.

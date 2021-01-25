@@ -127,7 +127,7 @@ MODULE m_na
 
       DO j = 1, itermax + 1
 
-        DO i = 1, nsample
+        DO i = 1, ns
 
           i0 = 1 + (i - 1 + ntot) * nd
           i1 = i0 + nd - 1
