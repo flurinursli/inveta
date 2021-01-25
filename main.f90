@@ -466,7 +466,7 @@ MODULE m_inveta
       p = MIN(world_size, query_fft_size() / nthreads)
 
       ! logic grid has workable FFT points (for RTT) along x and number of observations along y
-      npts = [p, SIZE(nobs)]
+      npts = [query_fft_size(), SIZE(nobs)]
 
       ! return optimal cpu configuration. In any case, all cpus are used.
       CALL best_cpu_grid(p, world_size, SIZE(nobs), dims)
