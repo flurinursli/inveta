@@ -332,7 +332,7 @@ MODULE m_rtt
 
       ! compensate for imaginary frequency "wi" and add scaling factor
       DO i = 1, nfft
-        e_multi(i) = e_multi(i) * EXP(wi * (i - 1) * dt) * c0
+        e_multi(i) = ABS(e_multi(i)) * EXP(wi * (i - 1) * dt) * c0
         e_time(i) = (i - 1) * dt
       ENDDO
 

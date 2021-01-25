@@ -50,9 +50,8 @@ MODULE m_na
       REAL(r32)                                                       :: misfitval, mfitmin, mfitmean, mfitminc
       REAL(r64)                                                       :: tictoc, tic, time_fwd
       REAL(r32),                 DIMENSION(nd_max+1)                  :: scales
-      REAL(r32),    ALLOCATABLE, DIMENSION(:)                         :: sum, xcur, work_NA1, work_NA2
+      REAL(r32),    ALLOCATABLE, DIMENSION(:)                         :: sum, xcur, work_NA1, work_NA2, na_model
       REAL(r32),                 DIMENSION(2,nd_max)                  :: range, ranget
-      REAL(r32),    ALLOCATABLE, DIMENSION(:,:)                       :: na_model
 
 
 
@@ -111,7 +110,7 @@ MODULE m_na
 
       nmodels = nsamplei + itermax*nsample
 
-      ALLOCATE(misfit(nmodels), na_models(nd*nmodels), xcur(nd), sum(max(nsample, nsamplei)))
+      ALLOCATE(misfit(nmodels), na_models(nd*nmodels), na_model(nd), xcur(nd), sum(max(nsample, nsamplei)))
       ALLOCATE(mfitord(nmodels), work_NA1(nmodels), work_NA2(nmodels))
       ALLOCATE(iwork_NA1(nmodels), iwork_NA2(nmodels))
 
@@ -126,24 +125,17 @@ MODULE m_na
       tic = 0._r64
       ns = nsamplei
 
-      ALLOCATE(na_model(nd, nsample))
-
       DO j = 1, itermax + 1
 
-        DO i = 1, ns, nsample
-          DO k = 1, nsample
+        DO i = 1, nsample
 
-            i0 = 1 + (k - 1) * nd + (i - 1 + ntot) * nd
-            i1 = i0 + nd - 1
+          i0 = 1 + (i - 1 + ntot) * nd
+          i1 = i0 + nd - 1
 
-            CALL transform2raw(na_models(i0:i1), nd, range, scales, na_model(:,k))
+          CALL transform2raw(na_models(i0:i1), nd, range, scales, na_model)
 
-          ENDDO
-
-          DO i = 1, nsample
-            i0         = ntot + i
-            misfit(i0) = misfun(nd, nsample, na_model)
-          ENDDO
+          i0 = ntot + i
+          misfit(i0) = misfun(nd, na_model)
 
         ENDDO
 
@@ -161,10 +153,10 @@ MODULE m_na
         i0 = 1 + (mopt - 1) * nd
         i1 = i0 + nd - 1
 
-        CALL transform2raw(na_models(i0:i1), nd, range, scales, na_model(:, 1))
+        CALL transform2raw(na_models(i0:i1), nd, range, scales, na_model)
 
         DO i = 1, nd
-          bestmodel(i) = na_model(i, 1)
+          bestmodel(i) = na_model(i)
         ENDDO
 
         ntot = ntot + ns
@@ -179,8 +171,6 @@ MODULE m_na
         CALL sampling(na_models, ntot, nsample, nd, nsleep, ncells, misfit, mfitord, ranget, xcur, restartNA, nclean, work_NA1)
 
       ENDDO
-
-      DEALLOCATE(na_model)
 
       DO i = 1, ntot
         i0 = 1 + (i - 1) * nd

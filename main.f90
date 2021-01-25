@@ -274,7 +274,7 @@ MODULE m_inveta
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
-    FUNCTION misfit(nd, nc, mpar)
+    REAL(r32) FUNCTION misfit(nd, mpar)
 
       ! Purpose:
       !   to return misfit between observed and simulated coda, where the computation of the latter is based on the RTT. The misfit
@@ -286,8 +286,8 @@ MODULE m_inveta
       !   18/12/20                  original version
       !
 
-      INTEGER(i32),                                                INTENT(IN) :: nd, nc
-      REAL(r32),                 DIMENSION(nd,nc),                 INTENT(IN) :: mpar
+      INTEGER(i32),                                                INTENT(IN) :: nd
+      REAL(r32),                 DIMENSION(nd),                    INTENT(IN) :: mpar
       INTEGER(i32)                                                            :: i, j, j0, j1, k, l, n, p, is, ie, ok, rank, ierr
       INTEGER(i32)                                                            :: imod, req
       INTEGER(i32),              DIMENSION(0:SIZE(pprank2)-1)                 :: displs, pprank
@@ -295,41 +295,35 @@ MODULE m_inveta
       REAL(r32),                                                   PARAMETER  :: gi = 0._r32, tau = 0.25_r32
       REAL(r32),                                                   PARAMETER  :: wp = 1._r32, ws = 23.4_r32
       REAL(r32),    ALLOCATABLE, DIMENSION(:)                                 :: time, envelope
-      REAL(r32),                 DIMENSION(nc)                                :: misfit
       REAL(r32),                 DIMENSION(SUM(nobs))                         :: delta, weight, b, tobs
       REAL(r32),                 DIMENSION(SUM(nobs),SIZE(nobs)+1)            :: a
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
-      ! cycle over models to be explored
-      DO imod = 1, nc
-
-        IF (elastic) THEN
-          gss = mpar(1, imod)
-          gpp = gss / mpar(2, imod)
-          gps = gpp * mpar(3, imod)
-          gsp = gps / 6._r32
-        ELSE
-          gss = mpar(1, imod)
-          bnu = mpar(2, imod)
-        ENDIF
+      IF (elastic) THEN
+        gss = mpar(1)
+        gpp = gss / mpar(2)
+        gps = gpp * mpar(3)
+        gsp = gps / 6._r32
+      ELSE
+        gss = mpar(1)
+        bnu = mpar(2)
+      ENDIF
 
 #include "linsys_incl.f90"
 
-        n = SIZE(nobs)
+      n = SIZE(nobs)
 
-        misfit(imod) = 0._r32
+      misfit = 0._r32
 
-        ! misfit is defined as "LN(obs) - (LN(syn) + LN(a) -b*t)"
-        ! remember that "b = Qsi*beta = Qpi*alpha"
-        DO j = 1, n
-          ie = SUM(nobs(1:j))
-          is = ie - nobs(j) + 1
-          DO i = is, ie
-            misfit(imod) = misfit(imod) + (delta(i) - b(j) + b(n + 1) * tobs(i))**2
-          ENDDO
+      ! misfit is defined as "LN(obs) - (LN(syn) + LN(a) -b*t)"
+      ! remember that "b = Qsi*beta = Qpi*alpha"
+      DO j = 1, n
+        ie = SUM(nobs(1:j))
+        is = ie - nobs(j) + 1
+        DO i = is, ie
+          misfit = misfit + (delta(i) - b(j) + b(n + 1) * tobs(i))**2
         ENDDO
-
       ENDDO
 
     END FUNCTION misfit
