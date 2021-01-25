@@ -169,7 +169,7 @@ MODULE m_rtt
 
       ! set absolute accuracy for numerical integration. Divide by 100 to set relative accuracy to 10^-2
       ! value raised to 200 in order to further reduce numerical noise
-      epsabs = MAX(MIN(a(1), a(2)) / 200._r64, EPSILON(1._r64))
+      epsabs = MAX(MIN(a(1), a(2)) / 300._r64, EPSILON(1._r64))
 
       ! define minimum wavenumber for integration (kmin << pi / L, eq. 4.125 of Jensen et al., 2011)
       kmin = pi / (beta * tcalc + sr) / 5._r64
