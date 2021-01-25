@@ -39,6 +39,7 @@ MODULE m_na
       INTEGER(i32),                                       INTENT(OUT) :: ok
 
       INTEGER(i32)                                                    :: nmodels, ntasks, rank, ierr, i, j, i0, i1, nclean
+      INTEGER(i32)                                                    :: k, color, intercomm, mycomm
       INTEGER(i32)                                                    :: nd, ntot, ns, nsleep, mopt
       INTEGER(i32),              PARAMETER                            :: nh_max = 1000, nsleep_max = 1, maxseq = 50, nd_max = 1024
       INTEGER(i32), ALLOCATABLE, DIMENSION(:)                         :: mfitord, iwork_NA1, iwork_NA2
@@ -49,8 +50,9 @@ MODULE m_na
       REAL(r32)                                                       :: misfitval, mfitmin, mfitmean, mfitminc
       REAL(r64)                                                       :: tictoc, tic, time_fwd
       REAL(r32),                 DIMENSION(nd_max+1)                  :: scales
-      REAL(r32),    ALLOCATABLE, DIMENSION(:)                         :: sum, na_model, xcur, work_NA1, work_NA2
+      REAL(r32),    ALLOCATABLE, DIMENSION(:)                         :: sum, xcur, work_NA1, work_NA2
       REAL(r32),                 DIMENSION(2,nd_max)                  :: range, ranget
+      REAL(r32),    ALLOCATABLE, DIMENSION(:,:)                       :: na_model
 
 
 
@@ -109,7 +111,7 @@ MODULE m_na
 
       nmodels = nsamplei + itermax*nsample
 
-      ALLOCATE(misfit(nmodels), na_models(nd*nmodels), na_model(nd), xcur(nd), sum(max(nsample, nsamplei)))
+      ALLOCATE(misfit(nmodels), na_models(nd*nmodels), xcur(nd), sum(max(nsample, nsamplei)))
       ALLOCATE(mfitord(nmodels), work_NA1(nmodels), work_NA2(nmodels))
       ALLOCATE(iwork_NA1(nmodels), iwork_NA2(nmodels))
 
@@ -124,26 +126,24 @@ MODULE m_na
       tic = 0._r64
       ns = nsamplei
 
+      ALLOCATE(na_model(nd, nsample))
+
       DO j = 1, itermax + 1
 
-! if (rank == 0) print*, 'NA iteration ', j
+        DO i = 1, ns, nsample
+          DO k = 1, nsample
 
-        ! CALL watch_start(tic, mpi_comm_self)
+            i0 = 1 + (k - 1) * nd + (i - 1 + ntot) * nd
+            i1 = i0 + nd - 1
 
-        DO i = rank + 1, ns, ntasks
+            CALL transform2raw(na_models(i0:i1), nd, range, scales, na_model(:,k))
 
-          i0 = 1 + (i - 1 + ntot) * nd
-          i1 = i0 + nd - 1
+          ENDDO
 
-          CALL transform2raw(na_models(i0:i1), nd, range, scales, na_model)
-
-          !misfitval = misfun(rank, fband, nd, na_model, misfitval, 1)
-          !misfitval = misfun(na_model(1), na_model(2))
-
-          misfitval = misfun(nd, na_model)
-
-          i0 = ntot + i
-          misfit(i0) = misfitval
+          DO i = 1, nsample
+            i0         = ntot + i
+            misfit(i0) = misfun(nd, nsample, na_model)
+          ENDDO
 
         ENDDO
 
@@ -151,7 +151,7 @@ MODULE m_na
 
         time_fwd = time_fwd + tic
 
-        CALL mpi_allreduce(mpi_in_place, misfit(ntot + 1), ns, mpi_real, mpi_sum, comm, ierr)
+        ! CALL mpi_allreduce(mpi_in_place, misfit(ntot + 1), ns, mpi_real, mpi_sum, comm, ierr)
 
         CALL statistics(misfit, ns, j, ntot, mfitmin, mfitminc, mfitmean, mopt, ncells, work_NA2, iwork_NA1, iwork_NA2, mfitord, &
                         ierr)
@@ -161,10 +161,10 @@ MODULE m_na
         i0 = 1 + (mopt - 1) * nd
         i1 = i0 + nd - 1
 
-        CALL transform2raw(na_models(i0:i1), nd, range, scales, na_model)
+        CALL transform2raw(na_models(i0:i1), nd, range, scales, na_model(:, 1))
 
         DO i = 1, nd
-          bestmodel(i) = na_model(i)
+          bestmodel(i) = na_model(i, 1)
         ENDDO
 
         ntot = ntot + ns
@@ -179,6 +179,8 @@ MODULE m_na
         CALL sampling(na_models, ntot, nsample, nd, nsleep, ncells, misfit, mfitord, ranget, xcur, restartNA, nclean, work_NA1)
 
       ENDDO
+
+      DEALLOCATE(na_model)
 
       DO i = 1, ntot
         i0 = 1 + (i - 1) * nd

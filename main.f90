@@ -16,6 +16,7 @@ MODULE m_inveta
   USE, NON_INTRINSIC :: m_llsq_r32
   USE, NON_INTRINSIC :: m_logfile
   USE                :: mpi
+  USE                :: omp_lib
 
   IMPLICIT none
 
@@ -29,12 +30,12 @@ MODULE m_inveta
 
   CHARACTER(:), ALLOCATABLE                 :: acf                                        !< autocorrelation function (scalar RTT)
   INTEGER(i32)                              :: world_size, world_rank
-  INTEGER(i32)                              :: comm1, comm2, comm3
+  INTEGER(i32)                              :: comm1, comm2
   INTEGER(i32)                              :: mode                                       !< inversion mode
   INTEGER(i32)                              :: threshold                                  !< minimum number of receivers for event
   INTEGER(i32)                              :: nsi, ns, nr, itermax, seed                 !< NA parameters
   INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: iobs, nobs                                 !< observations per recording
-  INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: pprank1, pprank2, pprank3
+  INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: pprank1, pprank2
   INTEGER(i32), ALLOCATABLE, DIMENSION(:,:) :: gs, ge                                     !< global indices for cartesian topology
   LOGICAL                                   :: elastic                                    !< scalar or elastic RTT
   LOGICAL                                   :: noweight                                   !< disable weighted linear regression
@@ -135,7 +136,7 @@ MODULE m_inveta
       REAL(r32),                  DIMENSION(:),                     INTENT(IN) :: bestmodel
       CHARACTER(:),  ALLOCATABLE                                               :: fo
       INTEGER(i32)                                                             :: lu, lf, hf, i, j, k, l, n, p, is, ie, j0, j1, ok
-      INTEGER(i32)                                                             :: rank, ierr
+      INTEGER(i32)                                                             :: rank, ierr, imod, req
       INTEGER(i32),               DIMENSION(0:SIZE(pprank2)-1)                 :: displs, pprank
       REAL(r32)                                                                :: gpp, gps, gsp, gss, gi, bnu, t, const
       REAL(r32),                                                    PARAMETER  :: tau = 0.25_r32, wp = 1._r32, ws = 23.4_r32
@@ -164,7 +165,7 @@ MODULE m_inveta
 
       n = SIZE(nobs)
 
-      ! divide "b" by velocity to obtain intrinsic attenuation 
+      ! divide "b" by velocity to obtain intrinsic attenuation
       gi = b(n + 1) / beta
 
       IF (world_rank .eq. 0) THEN
@@ -210,8 +211,21 @@ MODULE m_inveta
 
       ENDIF
 
+      CALL mpi_comm_rank(comm2, rank, ierr)
+
+      displs(0) = 0
+
+      DO i = 1, SIZE(pprank2) - 1
+        displs(i) = displs(i - 1) + pprank2(i - 1)
+      ENDDO
+
+      j0 = displs(rank) + 1
+      j1 = j0 + pprank2(rank) - 1
+
+      CALL mpi_comm_rank(comm1, rank, ierr)
+
       ! write also envelopes associated to best fitting parameters
-      DO j = 1, SIZE(nobs)
+      DO j = j0, j1
 
         n = iobs(j)
 
@@ -222,9 +236,9 @@ MODULE m_inveta
         ENDDO
 
         IF (elastic) THEN
-          CALL rtt(comm3, pprank3, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
+          CALL rtt(comm1, pprank1, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
         ELSE
-          CALL rtt(comm3, pprank3, time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
+          CALL rtt(comm1, pprank1, time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
         ENDIF
 
         IF (mode .le. 1) THEN
@@ -233,7 +247,7 @@ MODULE m_inveta
           fo = 'bestfit_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(j)) + '_' + TRIM(inverted(1)) + '.txt'
         ENDIF
 
-        IF (world_rank .eq. 0) THEN
+        IF (rank .eq. 0) THEN
 
           OPEN(newunit = lu, file = fo, status = 'unknown', form = 'formatted', access = 'sequential', action = 'write',  &
                iostat = ok)
@@ -260,7 +274,7 @@ MODULE m_inveta
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
-    REAL(r32) FUNCTION misfit(nd, mpar)
+    FUNCTION misfit(nd, nc, mpar)
 
       ! Purpose:
       !   to return misfit between observed and simulated coda, where the computation of the latter is based on the RTT. The misfit
@@ -272,43 +286,50 @@ MODULE m_inveta
       !   18/12/20                  original version
       !
 
-      INTEGER(i32),                                                INTENT(IN) :: nd
-      REAL(r32),                 DIMENSION(nd),                    INTENT(IN) :: mpar
+      INTEGER(i32),                                                INTENT(IN) :: nd, nc
+      REAL(r32),                 DIMENSION(nd,nc),                 INTENT(IN) :: mpar
       INTEGER(i32)                                                            :: i, j, j0, j1, k, l, n, p, is, ie, ok, rank, ierr
+      INTEGER(i32)                                                            :: imod, req
       INTEGER(i32),              DIMENSION(0:SIZE(pprank2)-1)                 :: displs, pprank
       REAL(r32)                                                               :: gss, gsp, gpp, gps, bnu, t
       REAL(r32),                                                   PARAMETER  :: gi = 0._r32, tau = 0.25_r32
       REAL(r32),                                                   PARAMETER  :: wp = 1._r32, ws = 23.4_r32
       REAL(r32),    ALLOCATABLE, DIMENSION(:)                                 :: time, envelope
+      REAL(r32),                 DIMENSION(nc)                                :: misfit
       REAL(r32),                 DIMENSION(SUM(nobs))                         :: delta, weight, b, tobs
       REAL(r32),                 DIMENSION(SUM(nobs),SIZE(nobs)+1)            :: a
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
-      IF (elastic) THEN
-        gss = mpar(1)
-        gpp = gss / mpar(2)
-        gps = gpp * mpar(3)
-        gsp = gps / 6._r32
-      ELSE
-        gss = mpar(1)
-        bnu = mpar(2)
-      ENDIF
+      ! cycle over models to be explored
+      DO imod = 1, nc
+
+        IF (elastic) THEN
+          gss = mpar(1, imod)
+          gpp = gss / mpar(2, imod)
+          gps = gpp * mpar(3, imod)
+          gsp = gps / 6._r32
+        ELSE
+          gss = mpar(1, imod)
+          bnu = mpar(2, imod)
+        ENDIF
 
 #include "linsys_incl.f90"
 
-      n = SIZE(nobs)
+        n = SIZE(nobs)
 
-      misfit = 0._r32
+        misfit(imod) = 0._r32
 
-      ! misfit is defined as "LN(obs) - (LN(syn) + LN(a) -b*t)"
-      ! remember that "b = Qsi*beta = Qpi*alpha"
-      DO j = 1, n
-        ie = SUM(nobs(1:j))
-        is = ie - nobs(j) + 1
-        DO i = is, ie
-          misfit = misfit + (delta(i) - b(j) + b(n + 1) * tobs(i))**2
+        ! misfit is defined as "LN(obs) - (LN(syn) + LN(a) -b*t)"
+        ! remember that "b = Qsi*beta = Qpi*alpha"
+        DO j = 1, n
+          ie = SUM(nobs(1:j))
+          is = ie - nobs(j) + 1
+          DO i = is, ie
+            misfit(imod) = misfit(imod) + (delta(i) - b(j) + b(n + 1) * tobs(i))**2
+          ENDDO
         ENDDO
+
       ENDDO
 
     END FUNCTION misfit
@@ -434,50 +455,168 @@ MODULE m_inveta
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
-    SUBROUTINE build_comms(nx, ny, nz)
+    SUBROUTINE build_comms()
 
-      INTEGER(i32),                             INTENT(IN) :: nx, ny, nz
-      INTEGER(i32)                                         :: cartopo, ierr
-      INTEGER(i32),                   PARAMETER            :: ndims = 3
-      INTEGER(i32), DIMENSION(ndims)                       :: dims, npts, coords
-      LOGICAL,                        PARAMETER            :: reorder = .true.
-      LOGICAL,      DIMENSION(ndims), PARAMETER            :: isperiodic = [.false., .false., .false.]
+      INTEGER(i32)                              :: cartopo, ierr, nthreads, p
+      INTEGER(i32),                   PARAMETER :: ndims = 2
+      INTEGER(i32), DIMENSION(ndims)            :: dims, npts, coords
+      LOGICAL,                        PARAMETER :: reorder = .true.
+      LOGICAL,      DIMENSION(ndims), PARAMETER :: isperiodic = [.false., .false.]
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
-      ! logic grid has "ns" points along x, number of observations along y and FFT points (for RTT) along z
-      npts = [nx, ny, nz]
+      nthreads = 1
+      !$ nthreads = omp_get_max_threads()
 
-      ! define number of processes along each direction
-      dims(1) = MIN(world_size, nx)
-      dims(2) = MIN(world_size / dims(1), ny)                       !< equal to 1 when "mode=0"
-      dims(3) = world_size / (dims(1) * dims(2))
+      ! compute max number of processes that can work on the same envelope
+      p = MIN(world_size, query_fft_size() / nthreads)
+
+      ! logic grid has workable FFT points (for RTT) along x and number of observations along y
+      npts = [p, SIZE(nobs)]
+
+      ! return optimal cpu configuration. In any case, all cpus are used.
+      CALL best_cpu_grid(p, world_size, SIZE(nobs), dims)
 
       IF (world_rank .eq. 0) CALL update_log(num2char('Processors grid', width=29, fill='.') + num2char('[' + num2char(dims(1)) +  &
-                             ', ' + num2char(dims(2)) + ', ' + num2char(dims(3)) + ']', width=18, justify='r'))
+                             ', ' + num2char(dims(2)) + ']', width=18, justify='r'))
 
       ! create topology
       CALL mpi_cart_create(mpi_comm_world, ndims, dims, isperiodic, reorder, cartopo, ierr)
 
       ! return process coordinates in current topology
-      CALL mpi_cart_coords(cartopo, world_rank, 3, coords, ierr)
+      CALL mpi_cart_coords(cartopo, world_rank, ndims, coords, ierr)
+
+      ! release cartesian topology
+      CALL mpi_comm_free(cartopo, ierr)
+
+      ALLOCATE(gs(ndims, 0:world_size-1), ge(ndims, 0:world_size-1))
 
       ! return first/last index along each direction for the calling process. Note: first point has first index equal to 1.
       CALL coords2index(npts, dims, coords, gs(:, world_rank), ge(:, world_rank))
 
       ! make all processes aware of global indices
-      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, gs, 3, mpi_integer, mpi_comm_world, ierr)
-      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, ge, 3, mpi_integer, mpi_comm_world, ierr)
+      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, gs, ndims, mpi_integer, mpi_comm_world, ierr)
+      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, ge, ndims, mpi_integer, mpi_comm_world, ierr)
 
-      ! release cartesian communicator
-      CALL mpi_comm_free(cartopo, ierr)
-
-      ! build all three communicators
+      ! build communicators
       CALL build_pencil(0, comm1, pprank1)
       CALL build_pencil(1, comm2, pprank2)
-      CALL build_pencil(2, comm3, pprank3)
+
+      DEALLOCATE(gs, ge)
 
     END SUBROUTINE build_comms
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
+    SUBROUTINE best_cpu_grid(n, x, y, factor)
+
+      INTEGER(i32)                              :: n, x, y
+      INTEGER(i32),              DIMENSION(2)   :: factor
+      INTEGER(i32)                              :: i, j, nx, ny
+      INTEGER(i32), ALLOCATABLE, DIMENSION(:,:) :: fx, fy
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      factor(:) = 0
+
+      ! define number of processes along each direction
+      CALL factorization(x, fx)
+      CALL factorization(y, fy)
+
+      nx = SIZE(fx, 2)
+      ny = SIZE(fy, 2)
+
+      ! try to find common factors, start from higher values to avoid trivial combinations as [n, 1]
+      outer: DO i = nx, 1, -1
+        IF (fx(2, i) .le. n) THEN
+          DO j = 1, ny
+            IF (ANY(fy(:, j) .eq. fx(1, i))) THEN
+              factor = [fx(2, i), fx(1, i)]
+              EXIT outer
+            ENDIF
+          ENDDO
+        ENDIF
+        IF (fx(1, i) .le. n) THEN
+          DO j = ny, 1, -1
+            IF (ANY(fy(:, j) .eq. fx(2, i))) THEN
+              factor = [fx(1, i), fx(2, i)]
+              EXIT outer
+            ENDIF
+          ENDDO
+        ENDIF
+      ENDDO outer
+
+      ! if no common factors were found, some cpus will get some work than others
+      IF (ALL(factor .eq. 0)) THEN
+
+        nx = HUGE(0)
+
+        DO i = MIN(n, x), 1, -1
+          ny = x / i
+          IF (x - ny*i .lt. nx) THEN
+            IF (ny .le. y) THEN
+              nx = x - ny*i
+              factor = [i, ny]
+            ENDIF
+          ENDIF
+        ENDDO
+
+      ENDIF
+
+      DEALLOCATE(fx, fy)
+
+      CONTAINS
+
+        SUBROUTINE factorization(n, factors)
+
+          INTEGER(i32),                              INTENT(IN)  :: n
+          INTEGER(i32), ALLOCATABLE, DIMENSION(:,:), INTENT(OUT) :: factors
+          INTEGER(i32)                                           :: i, c, s
+          INTEGER(i32)                                           :: x
+          INTEGER(i32), ALLOCATABLE, DIMENSION(:,:)              :: buffer
+
+          !-------------------------------------------------------------------------------------------------------------------------
+
+          ! max possible number of factors
+          s = FLOOR(SQRT(REAL(n)))
+
+          ALLOCATE(buffer(2, s))
+
+          buffer(:,:) = 0
+
+          ! test factors
+          DO i = 1, s
+
+            x = n / i
+
+            IF (MOD(n, i) .eq. 0) THEN
+              buffer(1, i) = i                          !< add factor ...
+              buffer(2, i) = x                          !< ... and its companion
+            ENDIF
+
+          ENDDO
+
+          ! actual factors found
+          i = COUNT(buffer(1, :) .ne. 0)
+
+          ALLOCATE(factors(2, i))
+
+          ! copy factors to output array
+          c = 0
+          DO i = 1, s
+            IF (buffer(1, i) .ne. 0) THEN
+              c = c + 1
+              factors(:, c) = buffer(:, i)
+            ENDIF
+          ENDDO
+
+          DEALLOCATE(buffer)
+
+        END SUBROUTINE factorization
+
+    END SUBROUTINE best_cpu_grid
 
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
     !===============================================================================================================================
@@ -489,11 +628,10 @@ MODULE m_inveta
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
-      DEALLOCATE(pprank1, pprank2, pprank3)
+      DEALLOCATE(pprank1, pprank2)
 
       CALL mpi_comm_free(comm1, ierr)
       CALL mpi_comm_free(comm2, ierr)
-      CALL mpi_comm_free(comm3, ierr)
 
     END SUBROUTINE destroy_comms
 
@@ -519,7 +657,7 @@ MODULE m_inveta
       INTEGER(i32), ALLOCATABLE, DIMENSION(:),             INTENT(OUT) :: n
       INTEGER(i32)                                                     :: i, ierr, rank, ntasks
       INTEGER(i32),              DIMENSION(0:world_size-1)             :: color
-      LOGICAL,                   DIMENSION(2)                          :: bool
+      LOGICAL                                                          :: bool
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
@@ -530,19 +668,13 @@ MODULE m_inveta
 
         ! pencil oriented along x-axis
         IF (dir .eq. 0) THEN
-          bool(1) = (gs(2, i) .eq. gs(2, world_rank)) .and. (ge(2, i) .eq. ge(2, world_rank))
-          bool(2) = (gs(3, i) .eq. gs(3, world_rank)) .and. (ge(3, i) .eq. ge(3, world_rank))
+          bool = (gs(2, i) .eq. gs(2, world_rank)) .and. (ge(2, i) .eq. ge(2, world_rank))
         ! pencil oriented along y-axis
         ELSEIF (dir .eq. 1) THEN
-          bool(1) = (gs(1, i) .eq. gs(1, world_rank)) .and. (ge(1, i) .eq. ge(1, world_rank))
-          bool(2) = (gs(3, i) .eq. gs(3, world_rank)) .and. (ge(3, i) .eq. ge(3, world_rank))
-        ! pencil oriented along z-axis
-        ELSEIF (dir .eq. 2) THEN
-          bool(1) = (gs(1, i) .eq. gs(1, world_rank)) .and. (ge(1, i) .eq. ge(1, world_rank))
-          bool(2) = (gs(2, i) .eq. gs(2, world_rank)) .and. (ge(2, i) .eq. ge(2, world_rank))
+          bool = (gs(1, i) .eq. gs(1, world_rank)) .and. (ge(1, i) .eq. ge(1, world_rank))
         ENDIF
 
-        IF (ALL(bool .eqv. .true.)) color(i) = i + 1
+        IF (bool .eqv. .true.) color(i) = i + 1
 
       ENDDO
 
@@ -628,9 +760,6 @@ PROGRAM main
 
   CALL mpi_comm_size(mpi_comm_world, world_size, ierr)
   CALL mpi_comm_rank(mpi_comm_world, world_rank, ierr)
-
-  ! "gs"/"ge" are specified in "m_inveta" and store first/last global index along each direction for all processes
-  ALLOCATE(gs(3, 0:world_size-1), ge(3, 0:world_size-1))
 
   IF (world_rank .eq. 0) CALL set_log_module(ok, screen = .true.)
 
@@ -812,7 +941,7 @@ PROGRAM main
   ALLOCATE(bestmodel(SIZE(lrange)))
 
   ! arrange available processes into logic grid
-  IF (mode .eq. 0) CALL build_comms(ns, 1, query_fft_size())
+  IF (mode .eq. 0) CALL build_comms()
 
   DO k = 1, SIZE(fbands, 2)                         !< loop over frequency bands
 
@@ -1035,7 +1164,7 @@ PROGRAM main
                                               ' in the frequency band ' + num2char(fbands(1,k), notation='f', precision=1) +  &
                                                '-' + num2char(fbands(2,k), notation='f', precision=1) + 'Hz')
 
-              CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+              CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
 
               ! write best-fitting model to disk
               CALL bestfit(k, [recvr(l)%code(1)], [current], bestmodel)
@@ -1113,9 +1242,9 @@ PROGRAM main
                                               'Hz')
 
             ! arrange available processes into logic grid
-            CALL build_comms(ns, SIZE(nobs), query_fft_size())
+            CALL build_comms()
 
-            CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+            CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
 
             ! write best-fitting model to disk
             CALL bestfit(k, [recvr(l)%code(1)], inverted, bestmodel)
@@ -1192,9 +1321,9 @@ PROGRAM main
           ENDIF
 
           ! arrange available processes into logic grid
-          CALL build_comms(ns, SIZE(nobs), query_fft_size())
+          CALL build_comms()
 
-          CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+          CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
 
           ! write best-fitting model to disk and explored parameters space to disk
           CALL bestfit(k, code, [current], bestmodel)
@@ -1281,8 +1410,6 @@ PROGRAM main
   ENDDO                                 !<  end loop over frequency bands
 
   IF (mode .eq. 0) CALL destroy_comms()
-
-  DEALLOCATE(gs, ge)
 
   IF (world_rank .eq. 0) CALL update_log('Program completed')
 
@@ -1925,13 +2052,13 @@ SUBROUTINE coords2index(npts, dims, coords, fs, fe)
 
   USE, NON_INTRINSIC :: m_precisions
 
-  INTEGER(i32), DIMENSION(3), INTENT(IN)  :: npts, dims, coords
-  INTEGER(i32), DIMENSION(3), INTENT(OUT) :: fs, fe
+  INTEGER(i32), DIMENSION(2), INTENT(IN)  :: npts, dims, coords
+  INTEGER(i32), DIMENSION(2), INTENT(OUT) :: fs, fe
   INTEGER(i32)                            :: i
 
   !---------------------------------------------------------------------------------------------------------------------------------
 
-  DO i = 1, 3
+  DO i = 1, 2
     fs(i) = 1 + INT( REAL(npts(i)) / REAL(dims(i)) * REAL(coords(i)) )
     fe(i) = INT( REAL(npts(i)) / REAL(dims(i)) * REAL(coords(i) + 1) )
   ENDDO

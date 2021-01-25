@@ -36,9 +36,9 @@ DO j = j0, j1
 
   ! solve forward problem
   IF (elastic) THEN
-    CALL rtt(comm3, pprank3, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
+    CALL rtt(comm1, pprank1, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
   ELSE
-    CALL rtt(comm3, pprank3, time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
+    CALL rtt(comm1, pprank1, time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
   ENDIF
 
   k = l - nobs(j)                                        !< index of previous last point used for inversion
@@ -93,7 +93,8 @@ DO i = 1, SIZE(displs) - 1
 ENDDO
 
 ! exchange data inside communicator
-CALL mpi_allgatherv(mpi_in_place, 0, mpi_datatype_null, delta, pprank, displs, mpi_real, comm2, ierr)
+!CALL mpi_allgatherv(mpi_in_place, 0, mpi_datatype_null, delta, pprank, displs, mpi_real, comm2, ierr)
+CALL mpi_iallgatherv(mpi_in_place, 0, mpi_datatype_null, delta, pprank, displs, mpi_real, comm2, req, ierr)
 
 ! setup weights and remaning parameters
 DO j = 1, SIZE(nobs)
@@ -180,6 +181,8 @@ j = SIZE(nobs) + 1
 DO i = 1, SUM(nobs)
   a(i, j) = -tobs(i) * weight(i)
 ENDDO
+
+CALL mpi_wait(req, mpi_status_ignore, ierr)
 
 DO i = 1, SUM(nobs)
   b(i) = delta(i) * weight(i)
