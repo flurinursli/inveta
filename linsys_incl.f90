@@ -182,7 +182,16 @@ DO i = 1, SUM(nobs)
   a(i, j) = -tobs(i) * weight(i)
 ENDDO
 
+#ifdef DEBUG
+CALL watch_start(tictoc(2), mpi_comm_self)
+#endif
+
 CALL mpi_wait(req, mpi_status_ignore, ierr)
+
+#ifdef DEBUG
+CALL watch_stop(tictoc(2), mpi_comm_self)
+CALL mpi_allreduce(mpi_in_place, tictoc(2), 1, mpi_double, mpi_max, comm2, ierr)
+#endif
 
 DO i = 1, SUM(nobs)
   b(i) = delta(i) * weight(i)
