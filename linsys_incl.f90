@@ -82,20 +82,16 @@ DO j = j0, j1
 
 #ifdef DEBUG
   CALL watch_stop(tictoc(3), comm1)
-  CALL mpi_comm_rank(comm1, rank, ierr)
+  CALL mpi_comm_size(comm2, k, ierr)
 
-  DO k = 0, world_size
-    IF ( (k .eq. world_rank) .and. (rank .eq. 0) ) THEN
-      CALL update_log(num2char('Exe Obs ' + num2char(j), width=29, fill='.') +  &
-                      num2char('[' + num2char(tictoc(3), notation='s', width=10, precision=3) + ',' +   &
-                      num2char(MAXVAL(time), notation='f', width=6, precision=2) + ',' + &
-                      num2char(tsobs(j) + tau, notation='f', width=6, precision=2) + ',' + &
-                      num2char(gss, notation='s', width=10, precision=3) + ',' + &
-                      num2char(bnu, notation='f', width=6, precision=2) + ']', width=56, justify='r'), blankline=.false.)
-    ENDIF
-    CALL mpi_barrier(comm1, ierr)
-  ENDDO
-  CALL mpi_comm_rank(comm2, rank, ierr)
+  IF (world_rank .lt. k) THEN
+    CALL update_log(num2char('Exe Obs ' + num2char(j), width=29, fill='.') +  &
+                    num2char('[' + num2char(tictoc(3), notation='s', width=10, precision=3) + ',' +   &
+                    num2char(MAXVAL(time), notation='f', width=6, precision=2) + ',' + &
+                    num2char(tsobs(j) + tau, notation='f', width=6, precision=2) + ',' + &
+                    num2char(gss, notation='s', width=10, precision=3) + ',' + &
+                    num2char(bnu, notation='f', width=6, precision=2) + ']', width=56, justify='r'), blankline=.false.)
+  ENDIF
 #endif
 
   DEALLOCATE(time, envelope)
