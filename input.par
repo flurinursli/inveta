@@ -35,7 +35,8 @@ DIRECT Pwin = 3., Swin = 5., Factor = 100%,
 
 # "Pwin" and "Swin" determine MINIMUM window length (sec) for coda inversions ("Pwin" needed only for elastic RTT).
 # Recordings not fulfilling this requirement will not be used for inversion.
-CODA Pwin = 4., Swin = 6.,
+# "Tlim" marks the maximum time (Tmax) w.r.t. direct S-wave arrival (Ts), i.e. Tmax = Tlim * Ts
+CODA Pwin = 4., Swin = 6., Tlim = 4,
 
 # Set Neighbourhood Algorithm parameters
 InitialModels = 16, Models = 8, Resampled = 2, Iterations = 5, Seed = 6572,

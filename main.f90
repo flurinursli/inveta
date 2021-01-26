@@ -43,6 +43,7 @@ MODULE m_inveta
   REAL(r32)                                 :: drespl
   REAL(r32)                                 :: beta
   REAL(r32)                                 :: fwin
+  REAL(r32)                                 :: tlim
   REAL(r32)                                 :: pdwindow, sdwindow, pcwindow, scwindow     !< windows for direct and coda P-/S-waves
   REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: etass, etass2pp, etaps2pp, nu              !< scattering parameters
   REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: tobs, envobs, tpobs, tsobs                 !< observables used during inversion
@@ -940,6 +941,7 @@ PROGRAM main
 
   CALL mpi_bcast(sdwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
   CALL mpi_bcast(scwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
+  CALL mpi_bcast(tlim, 1, mpi_real, 0, mpi_comm_world, ierr)
 
   IF (elastic) THEN
     IF (world_rank .ne. 0) ALLOCATE(etass2pp(2), etaps2pp(2))
@@ -1024,15 +1026,15 @@ PROGRAM main
             DO i = 1, 4
               fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_CH_' + TRIM(recvr(l)%code(p)) + '_HH[ENZ]_' +  &
                    num2char(i) + '.mseed.ascii'
-              CALL read_miniseed(ok, fo, dt, timeseries)
+              CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
               IF (ok .eq. 0) EXIT
               fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_CH_' + TRIM(recvr(l)%code(p)) + '_HG[ENZ]_' +  &
                    num2char(i) + '.mseed.ascii'
-              CALL read_miniseed(ok, fo, dt, timeseries)
+              CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
               IF (ok .eq. 0) EXIT
               fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_CH_' + TRIM(recvr(l)%code(p)) + '_EH[ENZ]_' +  &
                    num2char(i) + '.mseed.ascii'
-              CALL read_miniseed(ok, fo, dt, timeseries)
+              CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
               IF (ok .eq. 0) EXIT
             ENDDO
           ENDIF
@@ -1618,6 +1620,12 @@ SUBROUTINE read_input_file(ok)
     RETURN
   ENDIF
 
+  CALL parse(ok, tlim, lu, 'Tlim', ['=', ','], 'CODA', com = '#')                 !< tlim (for coda)
+  IF (ok .ne. 0) CALL report_error(parser_error(ok))
+
+  ! by default, take whole time-series
+  IF (is_empty(tlim)) tlim = 0._r32
+
   CALL parse(ok, nsi, lu, 'InitialModels', ['=', ','], com = '#')                           !< nsi
   IF (ok .ne. 0) CALL report_error(parser_error(ok))
 
@@ -1811,6 +1819,12 @@ SUBROUTINE read_input_file(ok)
     ok = 1
     RETURN
   ENDIF
+  IF (wrong_par([tlim], 0._r32)) THEN
+    CALL report_error('Parameter "Tlim" for coda wave must be positive')
+    ok = 1
+    RETURN
+  ENDIF
+
   IF (wrong_par([fwin], 0._r32)) THEN
     CALL report_error('Parameter "Factor" for direct wave must be positive')
     ok = 1
