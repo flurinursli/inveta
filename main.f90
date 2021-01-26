@@ -852,9 +852,11 @@ PROGRAM main
                       num2char(sdwindow, notation='f', width=13, precision=3, justify='r') + '|' + num2char(fwin*100._r32,     &
                       notation='f', width=13, precision=1, justify='r') + '|', blankline = .false.)
       CALL update_log(num2char('Window width coda waves', width=29, fill='.') + num2char('P', width=17, justify='r') + '|' +  &
-                      num2char('S', width=13, justify='r') + '|', blankline = .false.)
+                      num2char('S', width=13, justify='r') + '|' + num2char('Tlim', width=13, justify='r') + '|',    &
+                      blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(pcwindow, notation = 'f', width=17, precision=3, justify='r') + '|' +  &
-                      num2char(scwindow, notation='f', width=13, precision=3, justify='r') + '|', blankline = .false.)
+                      num2char(scwindow, notation='f', width=13, precision=3, justify='r') + '|' + num2char(tlim, notation='f',  &
+                      width=13, precision=1, justify='r') + '|', blankline = .false.)
       CALL update_log(num2char('Parameters search range', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + '|' + &
                       num2char('EtaSS/PP', width=13, justify='r') + '|' + num2char('EtaPS/PP', width=13, justify='r') + '|',  &
                       blankline = .false.)
