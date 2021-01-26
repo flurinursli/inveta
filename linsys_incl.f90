@@ -93,6 +93,7 @@ DO j = j0, j1
                       num2char(gss, notation='s', width=10, precision=3) + ',' + &
                       num2char(bnu, notation='f', width=6, precision=2) + ']', width=56, justify='r'), blankline=.false.)
     ENDIF
+    CALL mpi_barrier(comm1, ierr)
   ENDDO
   CALL mpi_comm_rank(comm2, rank, ierr)
 #endif
