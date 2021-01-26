@@ -872,10 +872,10 @@ PROGRAM main
                       num2char('Factor (%)', width=13, justify='r') + '|', blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(sdwindow, notation='f', width=17, precision=3, justify='r') + '|' +  &
                       num2char(fwin*100._r32, notation='f', width=13, precision=1, justify='r') + '|', blankline = .false.)
-      CALL update_log(num2char('Window width S-coda waves', width=29, fill='.') + num2char('S', width=17, justify='r') + '|',  &
-                      blankline = .false.)
-      CALL update_log(num2char('', width=29) + num2char(scwindow, notation = 'f', width=17, precision=3, justify='r') + '|',   &
-                      blankline = .false.)
+      CALL update_log(num2char('Window width S-coda waves', width=29, fill='.') + num2char('S', width=17, justify='r') + '|' +  &
+                      num2char('Tlim', width=13, justify='r') + '|', blankline = .false.)
+      CALL update_log(num2char('', width=29) + num2char(scwindow, notation = 'f', width=17, precision=3, justify='r') + '|' +   &
+                      num2char(tlim, notation='f', width=13, precision=1) + '|', justify='r', blankline = .false.)
       CALL update_log(num2char('Parameters search range', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + '|' +  &
                       num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(etass(1), notation='s', width=8, precision=1, justify='r') + ',' +  &
