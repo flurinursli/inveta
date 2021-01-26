@@ -80,8 +80,6 @@ DO j = j0, j1
     delta(k) = LOG(envobs(i + p)) - LOG(envelope(i))
   ENDDO
 
-  DEALLOCATE(time, envelope)
-
 #ifdef DEBUG
   CALL watch_stop(tictoc(3), comm1)
   CALL mpi_comm_rank(comm1, rank, ierr)
@@ -96,6 +94,8 @@ DO j = j0, j1
   ENDIF
   CALL mpi_comm_rank(comm2, rank, ierr)
 #endif
+
+  DEALLOCATE(time, envelope)
 
 ENDDO
 
