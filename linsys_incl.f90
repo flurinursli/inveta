@@ -84,9 +84,9 @@ DO j = j0, j1
 
 #ifdef DEBUG
   CALL watch_stop(tictoc(3), comm1)
-  CALL mpi_comm_rank(rank, comm1, ierr)
+  CALL mpi_comm_rank(k, comm1, ierr)
 
-  IF (rank .eq. 0) THEN
+  IF (k .eq. 0) THEN
     CALL update_log(num2char('Exe Obs ' + num2char(j), width=29, fill='.') +  &
                     num2char('[' + num2char(tictoc(3), notation='s', width=10, precision=3) + ',' +   &
                     num2char(MAXVAL(time), notation='f', width=6, precision=2) + ',' + &
@@ -94,8 +94,6 @@ DO j = j0, j1
                     num2char(gss, notation='s', width=10, precision=3) + ',' + &
                     num2char(bnu, notation='f', width=6, precision=2) + ']', width=56, justify='r'), blankline=.false.)
   ENDIF
-
-  CALL mpi_comm_rank(rank, comm2, ierr)
 #endif
 
 ENDDO
