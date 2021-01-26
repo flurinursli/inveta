@@ -25,9 +25,9 @@ j1 = j0 + pprank2(rank) - 1
 ! loop over observations and compute difference between observed and synthetic envelopes
 DO j = j0, j1
 
-#ifdef DEBUG
-  CALL watch_start(tictoc(3), comm1)
-#endif
+! #ifdef DEBUG
+!   CALL watch_start(tictoc(3), comm1)
+! #endif
 
   l = SUM(nobs(1:j))                   !< sum up number of points used for inversion
   n = iobs(j)                          !< number of points in current envelope
@@ -80,19 +80,19 @@ DO j = j0, j1
     delta(k) = LOG(envobs(i + p)) - LOG(envelope(i))
   ENDDO
 
-#ifdef DEBUG
-  CALL watch_stop(tictoc(3), comm1)
-  CALL mpi_comm_size(comm2, k, ierr)
-
-  IF (world_rank .lt. k) THEN
-    CALL update_log(num2char('Exe Obs ' + num2char(j), width=29, fill='.') +  &
-                    num2char('[' + num2char(tictoc(3), notation='s', width=10, precision=3) + ',' +   &
-                    num2char(MAXVAL(time), notation='f', width=6, precision=2) + ',' + &
-                    num2char(tsobs(j) + tau, notation='f', width=6, precision=2) + ',' + &
-                    num2char(gss, notation='s', width=10, precision=3) + ',' + &
-                    num2char(bnu, notation='f', width=6, precision=2) + ']', width=56, justify='r'), blankline=.false.)
-  ENDIF
-#endif
+! #ifdef DEBUG
+!   CALL watch_stop(tictoc(3), comm1)
+!   CALL mpi_comm_size(comm2, k, ierr)
+!
+!   IF (world_rank .lt. k) THEN
+!     CALL update_log(num2char('Exe Obs ' + num2char(j), width=29, fill='.') +  &
+!                     num2char('[' + num2char(tictoc(3), notation='s', width=10, precision=3) + ',' +   &
+!                     num2char(MAXVAL(time), notation='f', width=6, precision=2) + ',' + &
+!                     num2char(tsobs(j) + tau, notation='f', width=6, precision=2) + ',' + &
+!                     num2char(gss, notation='s', width=10, precision=3) + ',' + &
+!                     num2char(bnu, notation='f', width=6, precision=2) + ']', width=56, justify='r'), blankline=.false.)
+!   ENDIF
+! #endif
 
   DEALLOCATE(time, envelope)
 
@@ -208,7 +208,6 @@ CALL mpi_wait(req, mpi_status_ignore, ierr)
 
 #ifdef DEBUG
 CALL watch_stop(tictoc(2), mpi_comm_self)
-CALL mpi_allreduce(mpi_in_place, tictoc(2), 1, mpi_double, mpi_max, comm2, ierr)
 #endif
 
 DO i = 1, SUM(nobs)

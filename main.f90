@@ -144,7 +144,7 @@ MODULE m_inveta
       REAL(r32),     ALLOCATABLE, DIMENSION(:)                                 :: time, envelope
       REAL(r32),                  DIMENSION(SUM(nobs))                         :: delta, weight, b, tobs
       REAL(r32),                  DIMENSION(SUM(nobs),SIZE(nobs)+1)            :: a
-      REAL(r64),                  DIMENSION(3)                                 :: tictoc
+      REAL(r64),                  DIMENSION(2)                                 :: tictoc
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
@@ -281,9 +281,10 @@ MODULE m_inveta
 
 #ifdef DEBUG
       CALL watch_stop(tictoc(2), comm2)
+      CALL mpi_allreduce(mpi_in_place, tictoc, 2, mpi_double, mpi_max, comm2, ierr)
 
       IF (world_rank .eq. 0) THEN
-        CALL update_log(num2char('BestModel Exe&IO', width=29, fill='.') +  &
+        CALL update_log(num2char('Max Exe&IO Time', width=29, fill='.') +  &
                         num2char('[' + num2char(tictoc(1), notation='s', width=10, precision=3) + ',' +   &
                         num2char(tictoc(2), notation='s', width=11, precision=3) + ']', width=36, justify='r'),blankline = .false.)
       ENDIF
@@ -318,7 +319,7 @@ MODULE m_inveta
       REAL(r32),    ALLOCATABLE, DIMENSION(:)                                 :: time, envelope
       REAL(r32),                 DIMENSION(SUM(nobs))                         :: delta, weight, b, tobs
       REAL(r32),                 DIMENSION(SUM(nobs),SIZE(nobs)+1)            :: a
-      REAL(r64),                 DIMENSION(3)                                 :: tictoc
+      REAL(r64),                 DIMENSION(2)                                 :: tictoc
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
@@ -340,9 +341,10 @@ MODULE m_inveta
 
 #ifdef DEBUG
       CALL watch_stop(tictoc(1), comm2)
+      CALL mpi_allreduce(mpi_in_place, tictoc, 2, mpi_double, mpi_max, comm2, ierr)
 
-      IF (rank .eq. 0) THEN
-        CALL update_log(num2char('Exe vs. Wait Comm', width=29, fill='.') +  &
+      IF (world_rank .eq. 0) THEN
+        CALL update_log(num2char('Max Exe vs. Wait Time', width=29, fill='.') +  &
                         num2char('[' + num2char(tictoc(1), notation='s', width=10, precision=3) + ',' +   &
                         num2char(tictoc(2), notation='s', width=11, precision=3) + ']', width=36, justify='r'), blankline=.false.)
       ENDIF
