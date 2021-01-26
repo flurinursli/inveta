@@ -790,7 +790,8 @@ PROGRAM main
   CALL mpi_comm_size(mpi_comm_world, world_size, ierr)
   CALL mpi_comm_rank(mpi_comm_world, world_rank, ierr)
 
-  IF (world_rank .eq. 0) CALL set_log_module(ok, screen = .true.)
+  ! IF (world_rank .eq. 0) CALL set_log_module(ok, screen = .true.)
+  CALL set_log_module(ok, screen = .true.)
 
   ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --
   ! --------------------------------- read main input file and stop execution if error is raised -----------------------------------
