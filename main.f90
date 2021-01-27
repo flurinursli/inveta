@@ -1132,6 +1132,7 @@ PROGRAM main
 
             CALL ifft(analytic, spectrum)                             !< return analytic signal
 
+            ! compute energy envelope
             DO i = 1, n
               envlp(i) = envlp(i) + 0.5_r32 * ABS(analytic(i))**2     !< compute envelope (eq. 2.27 Sato&Fehler) and stack
             ENDDO
