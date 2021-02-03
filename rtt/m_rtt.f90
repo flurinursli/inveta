@@ -162,7 +162,7 @@ MODULE m_rtt
       ! evaluate paaschens' heuristic solution for multiple isotropic scattering at S-wave arrival time and maximum time
       ! hack to reduce numerical instability for forward scattering
       IF ( (eta_s .ge. 1.0E-02_r32) .and. (nu .gt. 0._r32) ) THEN
-        CALL paasschens([REAL(ts, r64), tcalc], REAL(ts, r64), beta, REAL(eta_s / 10._r32, r64), 0._r64, a)
+        CALL paasschens([REAL(ts, r64), tcalc], REAL(ts, r64), beta, REAL(eta_s / 30._r32, r64), 0._r64, a)
       ELSE
         CALL paasschens([REAL(ts, r64), tcalc], REAL(ts, r64), beta, REAL(eta_s, r64), 0._r64, a)
       ENDIF
