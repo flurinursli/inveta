@@ -8,11 +8,11 @@ Bands = {2.,4.; 4.,8.; 8.,16.; 16., 32.},
 
 # Set parameters range for NA inversion.
 # For scalar RTT, set "EtaSS" and "Nu"; for elastic RTT, set "EtaSS", "EtaSP", "EtaPP", "EtaPS".
-EtaSS = {0.00001, 0.03},
+EtaSS = {0.0001, 0.03},
 # Nu could be up to 3 for V.K., up to 8 for Gaussian
-#Nu   = {0, 0},
-EtaSS/PP = {1., 15.},            # EtaSS can be up to 15x larger than EtaPP
-EtaPS/PP = {1., 5.},             # EtaPS can be up to 5x larger than EtaPP
+Nu   = {0, 0},
+#EtaSS/PP = {1., 15.},            # EtaSS can be up to 15x larger than EtaPP
+#EtaPS/PP = {1., 5.},             # EtaPS can be up to 5x larger than EtaPP
 
 
 # Set autocorrelation function of choice (only for scalar RTT when "Nu" not equal to zero).
@@ -23,9 +23,9 @@ acf = 'vk', Hurst = 0.5,
 Beta = 3.0,
 
 # Set inversion parameters.
-# Mode = 0: invert codas of every single event recorded by a receiver.
-# Mode = 1: invert codas recorded by each receiver altogether.
-# Mode = 2: invert all codas related to the same event if recorded by at least "Threshold" receivers.
+# Mode = 0: invert coda of every single event recorded by a receiver.
+# Mode = 1: invert coda recorded by each receiver altogether if at least "Threshold" recordings are available.
+# Mode = 2: invert all coda related to the same event if recorded by at least "Threshold" receivers.
 # Weight ('y'/'n') enables/disables Weighted Least Square regression
 Mode = 1, Threshold = 3, Weight = 'y',
 
@@ -39,8 +39,8 @@ DIRECT Pwin = 3., Swin = 5., Factor = 100%,
 CODA Pwin = 4., Swin = 6., Tlim = 4,
 
 # Set Neighbourhood Algorithm parameters
-InitialModels = 16, Models = 8, Resampled = 2, Iterations = 5, Seed = 6572,
-#InitialModels = 8, Models = 8, Resampled = 2, Iterations = 15, Seed = 6572,
+#InitialModels = 16, Models = 8, Resampled = 2, Iterations = 1, Seed = 6572,
+InitialModels = 4, Models = 4, Resampled = 2, Iterations = 1, Seed = 6572,
 
 # List of all events for all stations. "Folder" contains recordings, whereas "File" P-/S- arrival times.
 #REC Folder = 'recordings/BALST', File = 'recordings/BALST/BALST_picked_events.txt',

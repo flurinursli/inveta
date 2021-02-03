@@ -10,6 +10,7 @@
 !
 
 weight(:) = 0._r32
+delta(:) = 0._r32
 
 CALL mpi_comm_rank(comm2, rank, ierr)
 
@@ -24,10 +25,6 @@ j1 = j0 + pprank2(rank) - 1
 
 ! loop over observations and compute difference between observed and synthetic envelopes
 DO j = j0, j1
-
-! #ifdef DEBUG
-!   CALL watch_start(tictoc(3), comm1)
-! #endif
 
   l = SUM(nobs(1:j))                   !< sum up number of points used for inversion
   n = iobs(j)                          !< number of points in current envelope
@@ -45,6 +42,10 @@ DO j = j0, j1
     CALL rtt(comm1, pprank1, time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
   ENDIF
 
+  IF (ok .ne. 0) errors = ok
+
+  IF (errors .gt. 1) CYCLE
+
   k = l - nobs(j)                                        !< index of previous last point used for inversion
   p = SUM(iobs(1:j)) - iobs(j)                           !< index of last point for previous envelope
 
@@ -54,10 +55,36 @@ DO j = j0, j1
     is = MAX(1, is)                                                                     !< make sure we don't go below 1
     ie = is + NINT(fwin*pdwindow / drespl)                                              !< end direct P-window
 
+    DO i = is, ie
+      IF (envelope(i) .lt. 0._r32) errors = 4
+    ENDDO
+
+    IF (errors .gt. 1) THEN
+      IF (elastic) THEN
+        error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gpp, gps, gsp, gss]
+      ELSE
+        error_params = [time(n), time(2)-time(1), tsobs(j), gss, bnu, 0._r32, 0._r32, 0._r32]
+      ENDIF
+      CYCLE
+    ENDIF
+
     k        = k + 1
     delta(k) = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
 
     is = NINT((tsobs(j) - sdwindow * (1._r32 - fwin)) / drespl) + 1                     !< beginning direct S-window
+
+    DO i = ie + 1, is - 1
+      IF (envelope(i) .lt. 0._r32) errors = 4
+    ENDDO
+
+    IF (errors .gt. 1) THEN
+      IF (elastic) THEN
+        error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gpp, gps, gsp, gss]
+      ELSE
+        error_params = [time(n), time(2)-time(1), tsobs(j), gss, bnu, 0._r32, 0._r32, 0._r32]
+      ENDIF
+      CYCLE
+    ENDIF
 
     ! add points from just after direct P-window to just before direct S-window (e.g. P-coda)
     DO i = ie + 1, is - 1
@@ -71,6 +98,19 @@ DO j = j0, j1
   is = MAX(1, is)                                                                      !< make sure we don't go below 1
   ie = is + NINT(fwin*sdwindow / drespl)                                               !< end direct S-window
 
+  DO i = is, n
+    IF (envelope(i) .lt. 0._r32) errors = 4
+  ENDDO
+
+  IF (errors .gt. 1) THEN
+    IF (elastic) THEN
+      error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gpp, gps, gsp, gss]
+    ELSE
+      error_params = [time(n), time(2)-time(1), tsobs(j), gss, bnu, 0._r32, 0._r32, 0._r32]
+    ENDIF
+    CYCLE
+  ENDIF
+
   k        = k + 1
   delta(k) = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
 
@@ -79,20 +119,6 @@ DO j = j0, j1
     k        = k + 1
     delta(k) = LOG(envobs(i + p)) - LOG(envelope(i))
   ENDDO
-
-! #ifdef DEBUG
-!   CALL watch_stop(tictoc(3), comm1)
-!   CALL mpi_comm_size(comm2, k, ierr)
-!
-!   IF (world_rank .lt. k) THEN
-!     CALL update_log(num2char('Exe Obs ' + num2char(j), width=29, fill='.') +  &
-!                     num2char('[' + num2char(tictoc(3), notation='s', width=10, precision=3) + ',' +   &
-!                     num2char(MAXVAL(time), notation='f', width=6, precision=2) + ',' + &
-!                     num2char(tsobs(j) + tau, notation='f', width=6, precision=2) + ',' + &
-!                     num2char(gss, notation='s', width=10, precision=3) + ',' + &
-!                     num2char(bnu, notation='f', width=6, precision=2) + ']', width=56, justify='r'), blankline=.false.)
-!   ENDIF
-! #endif
 
   DEALLOCATE(time, envelope)
 
@@ -216,3 +242,5 @@ ENDDO
 
 ! in output, first [SIZE(nobs) + 1] points contain solution: [ln(c1), ln(c2), ..., ln(cn), b]
 CALL llsq_solver(a, b, ok)
+
+IF (ok .ne. 0) errors = 10 + ok

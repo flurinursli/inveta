@@ -2,13 +2,13 @@ include ../Makefile.inc
 
 LIB_NAME = libcommon.a
 
-F90_OBJ = m_precisions.o m_strings.o m_parser.o m_logfile.o 
+F90_OBJ = m_precisions.o m_strings.o m_parser.o m_logfile.o
 
 # default rule
 common: dirs $(LIB_NAME)
 
 $(F90_OBJ) : %.o : %.f90
-	$(FC) $(FFLAGS) -c -o $@ $<
+	$(FC) $(OPT) -c -o $@ $<
 
 $(LIB_NAME): $(F90_OBJ)
 	ar qc $@ $(F90_OBJ)
@@ -18,9 +18,8 @@ $(LIB_NAME): $(F90_OBJ)
 dirs:
 	mkdir -p include lib
 
-clean: 
+clean:
 	rm -rf include
 	rm -rf lib
 	rm -rf *.o
 	rm -rf *.mod
-

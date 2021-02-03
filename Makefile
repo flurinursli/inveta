@@ -3,11 +3,11 @@ include Makefile.inc
 OBJ = main.o
 
 all : common llsq fft filter interpolation rtt na $(OBJ)
-	$(FC) $(FFLAGS) -fopenmp -o inveta.exe $(OBJ) -Lcommon/lib -Lllsq/lib -Lfft/lib -Linterpolation/lib -Lfilter/lib -Lrtt/lib -Lna/lib -L$(FFTW_PATH)/lib -L$(LAPACK_PATH) -L$(GSL_PATH) -lcommon -lllsqf -lfilterf -lfft -linterplf -lllsq -lrtt -lna $(LINK_FLAGS) -lgsl -lgslcblas -linterpl
+	$(FC) $(OPT) $(OMP) -o inveta.exe $(OBJ) -Lcommon/lib -Lllsq/lib -Lfft/lib -Linterpolation/lib -Lfilter/lib -Lrtt/lib -Lna/lib -L$(FFTW_PATH)/lib -L$(LAPACK_PATH) -L$(GSL_PATH) -lcommon -lllsqf -lfilterf -lfft -linterplf -lllsq -lrtt -lna $(LINK_FLAGS) -lgsl -lgslcblas -linterpl
 
 # how to get main.o
 $(OBJ) : %.o : %.f90
-	$(FC) $(FFLAGS) -fopenmp -cpp $(DEBUG) -Icommon/include -Illsq/include32 -Iinterpolation/include32 -Ifft/include -Ifilter/include -Illsq/include32 -Irtt/include -Ina/include -c -o $@ $<
+	$(FC) $(OPT) $(OMP) -cpp $(DEBUG) -Icommon/include -Illsq/include32 -Iinterpolation/include32 -Ifft/include -Ifilter/include -Illsq/include32 -Irtt/include -Ina/include -c -o $@ $<
 
 common:
 	cd $@; $(MAKE) $@ $<

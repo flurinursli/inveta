@@ -33,6 +33,7 @@ MODULE m_inveta
   INTEGER(i32)                              :: comm1, comm2
   INTEGER(i32)                              :: mode                                       !< inversion mode
   INTEGER(i32)                              :: threshold                                  !< minimum number of receivers for event
+  INTEGER(i32)                              :: errors
   INTEGER(i32)                              :: nsi, ns, nr, itermax, seed                 !< NA parameters
   INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: iobs, nobs                                 !< observations per recording
   INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: pprank1, pprank2
@@ -45,6 +46,7 @@ MODULE m_inveta
   REAL(r32)                                 :: fwin
   REAL(r32)                                 :: tlim
   REAL(r32)                                 :: pdwindow, sdwindow, pcwindow, scwindow     !< windows for direct and coda P-/S-waves
+  REAL(r32),                 DIMENSION(8)   :: error_params
   REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: etass, etass2pp, etaps2pp, nu              !< scattering parameters
   REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: tobs, envobs, tpobs, tsobs                 !< observables used during inversion
   REAL(r32),    ALLOCATABLE, DIMENSION(:,:) :: fbands                                     !< frequency bands for inversion
@@ -323,6 +325,11 @@ MODULE m_inveta
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
+      misfit = 0._r32
+
+      ! return immediately if an important error was raised
+      IF (errors .gt. 1) RETURN
+
       IF (elastic) THEN
         gss = mpar(1)
         gpp = gss / mpar(2)
@@ -352,8 +359,6 @@ MODULE m_inveta
 
       n = SIZE(nobs)
 
-      misfit = 0._r32
-
       ! misfit is defined as "LN(obs) - (LN(syn) + LN(a) -b*t)"
       ! remember that "b = Qsi*beta = Qpi*alpha"
       DO j = 1, n
@@ -363,6 +368,8 @@ MODULE m_inveta
           misfit = misfit + (delta(i) - b(j) + b(n + 1) * tobs(i))**2
         ENDDO
       ENDDO
+
+      CALL mpi_allreduce(mpi_in_place, errors, 1, mpi_int, mpi_max, comm2, ierr)
 
     END FUNCTION misfit
 
@@ -489,7 +496,7 @@ MODULE m_inveta
 
     SUBROUTINE build_comms()
 
-      INTEGER(i32)                              :: cartopo, ierr, nthreads, p
+      INTEGER(i32)                              :: cartopo, ierr, nthreads, p, rank, ntasks
       INTEGER(i32),                   PARAMETER :: ndims = 2
       INTEGER(i32), DIMENSION(ndims)            :: dims, npts, coords
       LOGICAL,                        PARAMETER :: reorder = .true.
@@ -515,26 +522,36 @@ MODULE m_inveta
       ! create topology
       CALL mpi_cart_create(mpi_comm_world, ndims, dims, isperiodic, reorder, cartopo, ierr)
 
-      ! return process coordinates in current topology
-      CALL mpi_cart_coords(cartopo, world_rank, ndims, coords, ierr)
+      comm1 = mpi_comm_null
+      comm2 = mpi_comm_null
 
-      ! release cartesian topology
-      CALL mpi_comm_free(cartopo, ierr)
+      IF (cartopo .ne. mpi_comm_null) THEN
 
-      ALLOCATE(gs(ndims, 0:world_size-1), ge(ndims, 0:world_size-1))
+        CALL mpi_comm_rank(cartopo, rank, ierr)              !< this call is necessary if "reorder = .true."
+        CALL mpi_comm_size(cartopo, ntasks, ierr)
 
-      ! return first/last index along each direction for the calling process. Note: first point has first index equal to 1.
-      CALL coords2index(npts, dims, coords, gs(:, world_rank), ge(:, world_rank))
+        ALLOCATE(gs(ndims, 0:ntasks-1), ge(ndims, 0:ntasks-1))
 
-      ! make all processes aware of global indices
-      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, gs, ndims, mpi_integer, mpi_comm_world, ierr)
-      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, ge, ndims, mpi_integer, mpi_comm_world, ierr)
+        ! return process coordinates in current topology
+        CALL mpi_cart_coords(cartopo, rank, ndims, coords, ierr)
 
-      ! build communicators
-      CALL build_pencil(0, comm1, pprank1)
-      CALL build_pencil(1, comm2, pprank2)
+        ! return first/last index along each direction for the calling process. Note: first point has first index equal to 1.
+        CALL coords2index(npts, dims, coords, gs(:, rank), ge(:, rank))
 
-      DEALLOCATE(gs, ge)
+        ! make all processes aware of global indices
+        CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, gs, ndims, mpi_integer, cartopo, ierr)
+        CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, ge, ndims, mpi_integer, cartopo, ierr)
+
+        ! build communicators
+        CALL build_pencil(cartopo, 0, comm1, pprank1)
+        CALL build_pencil(cartopo, 1, comm2, pprank2)
+
+        ! release cartesian topology
+        CALL mpi_comm_free(cartopo, ierr)
+
+        DEALLOCATE(gs, ge)
+
+      ENDIF
 
     END SUBROUTINE build_comms
 
@@ -671,7 +688,7 @@ MODULE m_inveta
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
-    SUBROUTINE build_pencil(dir, newcomm, n)
+    SUBROUTINE build_pencil(comm, dir, newcomm, n)
 
       ! Purpose:
       ! To group processes falling inside the same pencil oriented along a specific direction "dir" into new communicator "newcomm",
@@ -684,26 +701,29 @@ MODULE m_inveta
       !   11/01/21                  original version
       !
 
-      INTEGER(i32),                                        INTENT(IN)  :: dir
+      INTEGER(i32),                                        INTENT(IN)  :: comm, dir
       INTEGER(i32),                                        INTENT(OUT) :: newcomm
       INTEGER(i32), ALLOCATABLE, DIMENSION(:),             INTENT(OUT) :: n
-      INTEGER(i32)                                                     :: i, ierr, rank, ntasks
+      INTEGER(i32)                                                     :: i, ierr, rank, ntasks, orank, ontasks
       INTEGER(i32),              DIMENSION(0:world_size-1)             :: color
       LOGICAL                                                          :: bool
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
+      CALL mpi_comm_rank(comm, rank, ierr)
+      CALL mpi_comm_size(comm, ntasks, ierr)
+
       ! group processes into pencils
-      DO i = 0, world_size - 1
+      DO i = 0, ntasks - 1
 
         color(i) = 0
 
         ! pencil oriented along x-axis
         IF (dir .eq. 0) THEN
-          bool = (gs(2, i) .eq. gs(2, world_rank)) .and. (ge(2, i) .eq. ge(2, world_rank))
+          bool = (gs(2, i) .eq. gs(2, rank)) .and. (ge(2, i) .eq. ge(2, rank))
         ! pencil oriented along y-axis
         ELSEIF (dir .eq. 1) THEN
-          bool = (gs(1, i) .eq. gs(1, world_rank)) .and. (ge(1, i) .eq. ge(1, world_rank))
+          bool = (gs(1, i) .eq. gs(1, rank)) .and. (ge(1, i) .eq. ge(1, rank))
         ENDIF
 
         IF (bool .eqv. .true.) color(i) = i + 1
@@ -711,19 +731,19 @@ MODULE m_inveta
       ENDDO
 
       ! process belonging to the same pencil have same color
-      color(world_rank) = MAXVAL(color, dim = 1)
+      color(rank) = MAXVAL(color, dim = 1)
 
       ! create communicator subgroup
-      CALL mpi_comm_split(mpi_comm_world, color(world_rank), world_rank, newcomm, ierr)
+      CALL mpi_comm_split(comm, color(rank), rank, newcomm, ierr)
 
       ! process id and communicator size
-      CALL mpi_comm_rank(newcomm, rank, ierr)
-      CALL mpi_comm_size(newcomm, ntasks, ierr)
+      CALL mpi_comm_rank(newcomm, orank, ierr)
+      CALL mpi_comm_size(newcomm, ontasks, ierr)
 
-      ALLOCATE(n(0:ntasks - 1))
+      ALLOCATE(n(0:ontasks - 1))
 
       ! number of points along pencil direction for calling process
-      n(rank) = ge(dir + 1, world_rank) - gs(dir + 1, world_rank) + 1
+      n(orank) = ge(dir + 1, rank) - gs(dir + 1, rank) + 1
 
       ! make whole communicator aware of points for each process
       CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, n, 1, mpi_integer, newcomm, ierr)
@@ -733,6 +753,65 @@ MODULE m_inveta
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
+    SUBROUTINE explain_error()
+
+      ! Purpose:
+      ! To describe specific error codes.
+      !
+      ! Revisions:
+      !     Date                    Description of change
+      !     ====                    =====================
+      !   03/02/21                  original version
+      !
+
+      !---------------------------------------------------------------------------------------------------------------------------------
+
+      IF (errors .eq. 1) THEN
+        CALL update_log('Possible loss of accuracy detected')
+      ELSEIF (errors .eq. 2) THEN
+        CALL update_log('Could not find harmonic coefficients')
+      ELSEIF (errors .eq. 3) THEN
+        CALL update_log('Could not expand scattering pattern function accurately')
+      ELSEIF (errors .eq. 4) THEN
+        CALL update_log('Detected negative values in synthetic envelope')
+        IF (elastic) THEN
+          CALL update_log(num2char('Triggered for', width=29, fill='.') + num2char('Max Time', width=10, justify='r') + '|' +  &
+                          num2char('DT', width=10, justify='r') + '|' +  num2char('Tp', width=10, justify='r') + '|' +  &
+                          num2char('Ts', width=10, justify='r') + '|' +  num2char('EtaPP', width=10, justify='r') + '|' +  &
+                          num2char('EtaPS', width=10, justify='r') + '|' + num2char('EtaSP', width=10, justify='r') + '|' +  &
+                          num2char('EtaSS', width=10, justify='r') + '|')
+
+          CALL update_log(num2char('', width=29, fill='.') +     &
+                          num2char(error_params(1), notation='f', width=10, precision=2, justify='r') + '|' +  &
+                          num2char(error_params(2), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(3), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(4), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(5), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(6), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(7), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(8), notation='f', width=10, precision=4, justify='r') + '|', blankline = .false.)
+        ELSE
+          CALL update_log(num2char('Triggered for', width=29, fill='.') + num2char('Max Time', width=10, justify='r') + '|' +  &
+                          num2char('DT', width=10, justify='r') + '|' +  num2char('Ts', width=10, justify='r') + '|' +  &
+                          num2char('EtaSS', width=10, justify='r') + '|' + num2char('Nu', width=10, justify='r') + '|')
+
+          CALL update_log(num2char('', width=29, fill='.') +   &
+                          num2char(error_params(1), notation='f', width=10, precision=2, justify='r') + '|' +  &
+                          num2char(error_params(2), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(3), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(4), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(5), notation='f', width=10, precision=4, justify='r'), blankline = .false.)
+        ENDIF
+      ELSEIF (errors .gt. 10) THEN
+        CALL update_log('Linear regression failed with code ' + num2char(errors - 10))
+      ENDIF
+
+    END SUBROUTINE explain_error
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
+    !===================================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
 
 END MODULE m_inveta
 
@@ -779,16 +858,18 @@ PROGRAM main
   CHARACTER(10), ALLOCATABLE, DIMENSION(:)   :: code
   CHARACTER(30), ALLOCATABLE, DIMENSION(:)   :: inverted, blacklisted
   COMPLEX(r32),  ALLOCATABLE, DIMENSION(:)   :: analytic, spectrum
-  INTEGER(i32)                               :: ierr, ok, lu, n, i, j, k, p, l, is, ie, pts, comm
+  INTEGER(i32)                               :: ierr, ok, lu, n, i, j, k, p, l, is, ie, pts, rank
   INTEGER(i32),               DIMENSION(2)   :: v
   REAL(r32)                                  :: dt, t, gss, gpp, gsp, gps, bnu
-  REAL(r64)                                  :: tic
+  REAL(r64),                  DIMENSION(2)   :: tictoc
   REAL(r32),     ALLOCATABLE, DIMENSION(:)   :: time, trespl, h, envlp, respl, bestmodel, lrange, hrange, sampled, fit
   REAL(r32),     ALLOCATABLE, DIMENSION(:,:) :: timeseries
 
   !---------------------------------------------------------------------------------------------------------------------------------
 
   CALL mpi_init(ierr)
+
+  CALL watch_start(tictoc(1), mpi_comm_world)
 
   CALL mpi_comm_size(mpi_comm_world, world_size, ierr)
   CALL mpi_comm_rank(mpi_comm_world, world_rank, ierr)
@@ -875,7 +956,7 @@ PROGRAM main
       CALL update_log(num2char('Window width S-coda waves', width=29, fill='.') + num2char('S', width=17, justify='r') + '|' +  &
                       num2char('Tlim', width=13, justify='r') + '|', blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(scwindow, notation = 'f', width=17, precision=3, justify='r') + '|' +   &
-                      num2char(tlim, notation='f', width=13, precision=1) + '|', justify='r', blankline = .false.)
+                      num2char(tlim, notation='f', width=13, precision=1) + '|', blankline = .false.)
       CALL update_log(num2char('Parameters search range', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + '|' +  &
                       num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(etass(1), notation='s', width=8, precision=1, justify='r') + ',' +  &
@@ -976,16 +1057,13 @@ PROGRAM main
 
   ALLOCATE(bestmodel(SIZE(lrange)))
 
-  ! arrange available processes into logic grid
-  IF (mode .eq. 0) CALL build_comms()
-
   DO k = 1, SIZE(fbands, 2)                         !< loop over frequency bands
 
     drespl = 0.25_r32 / fbands(2, k)                !< Nyquist frequency after filtering is twice low-pass frequency
 
     current = ' '
 
-    DO                                              !< loop needed only if "mode = 2"
+    DO                                              !< loop needed only when "mode = 2"
 
       DO l = 1, SIZE(recvr)                           !< loop over receivers
 
@@ -1189,22 +1267,46 @@ PROGRAM main
 
           DEALLOCATE(trespl, h, envlp, respl, analytic, spectrum)
 
-          CALL watch_start(tic, mpi_comm_self)
-
           ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
           ! -------------------------------- inversion of each single coda recorded by a receiver ----------------------------------
 
           IF (mode .eq. 0) THEN
             IF (ALLOCATED(code)) THEN             !< obviously, do something only if receiver has recorded current event
 
-              IF (world_rank .eq. 0) CALL update_log('Inverting event ' + TRIM(current) + ' for receiver ' + TRIM(code(1)) +  &
-                                              ' in the frequency band ' + num2char(fbands(1,k), notation='f', precision=1) +  &
-                                               '-' + num2char(fbands(2,k), notation='f', precision=1) + 'Hz')
+              IF (world_rank .eq. 0) THEN
+                CALL update_log('Inverting event ' + TRIM(current) + ' for receiver ' + TRIM(code(1)) + ' in the frequency band '+ &
+                                num2char(fbands(1,k), notation='f', precision=1) + '-' +      &
+                                num2char(fbands(2,k), notation='f', precision=1) + 'Hz')
+              ENDIF
 
-              CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+              CALL watch_start(tictoc(2), mpi_comm_self)
 
-              ! write best-fitting model to disk
-              CALL bestfit(k, [recvr(l)%code(1)], [current], bestmodel)
+              ! arrange available processes into logic grid
+              CALL build_comms()
+
+              errors = 0
+
+              IF (comm2 .ne. mpi_comm_null) THEN
+                CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+              ENDIF
+
+              CALL mpi_bcast(errors, 1, mpi_int, 0, mpi_comm_world, ierr)
+
+              IF (world_rank .eq. 0) CALL explain_error()
+
+              IF (errors .gt. 1) CALL mpi_abort(mpi_comm_world, ok, ierr)
+
+              CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
+
+              IF (ok .ne. 0) THEN
+                IF (world_rank .eq. 0) CALL report_error('NA exited with error code: ' + num2char(ok))
+                CALL mpi_abort(mpi_comm_world, ok, ierr)
+              ENDIF
+
+              IF (comm2 .ne. mpi_comm_null) THEN
+                CALL bestfit(k, [recvr(l)%code(1)], [current], bestmodel)
+                CALL destroy_comms()
+              ENDIF
 
               IF (world_rank .eq. 0) THEN
 
@@ -1213,10 +1315,12 @@ PROGRAM main
 
                 CALL update_log(num2char('Models explored', width=29, fill='.') + num2char(SIZE(fit),width=17, justify='r') + '|')
 
-                CALL watch_stop(tic, mpi_comm_self)
+                CALL watch_stop(tictoc(2), mpi_comm_self)
 
-                CALL update_log(num2char('Elapsed time (s)', width=29, fill='.') + num2char(tic, notation = 'f', width = 17,  &
-                                precision = 1, justify='r') + '|', blankline = .false.)
+                tictoc(2) = tictoc(2) / 60._r64
+
+                CALL update_log(num2char('Elapsed time (min)', width=29, fill='.') +    &
+                                num2char(tictoc(2), notation='f', width=17, precision=1, justify='r') + '|', blankline = .false.)
 
                 ! update log file
                 IF (elastic) THEN
@@ -1225,9 +1329,11 @@ PROGRAM main
                   gps = gpp * bestmodel(3)
                   gsp = gps / 6._r32
 
-                  CALL update_log(num2char('Best model parameters', width=29, fill='.') + num2char('EtaPP', width=17, justify='r' &
-                                  ) + '|' + num2char('EtaPS', width=13, justify='r') + '|' + num2char('EtaSP', width=13,    &
-                                  justify='r') + '|' + num2char('EtaSS', width=13, justify='r') + '|', blankline = .false.)
+                  CALL update_log(num2char('Best model parameters', width=29, fill='.') +    &
+                                  num2char('EtaPP', width=17, justify='r') + '|' +   &
+                                  num2char('EtaPS', width=13, justify='r') + '|' +   &
+                                  num2char('EtaSP', width=13, justify='r') + '|' +   &
+                                  num2char('EtaSS', width=13, justify='r') + '|', blankline = .false.)
 
                   CALL update_log(num2char('', width=29) + num2char(gpp, notation='s', width=17, precision=3, justify='r') + '|' + &
                                   num2char(gps, notation='s', width=13, precision=3, justify='r') + '|' + &
@@ -1238,8 +1344,9 @@ PROGRAM main
                   gss = bestmodel(1)
                   bnu = bestmodel(2)
 
-                  CALL update_log(num2char('Best model parameters', width=29, fill='.') + num2char('EtaSS', width=17, justify='r' &
-                                  ) + '|' + num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
+                  CALL update_log(num2char('Best model parameters', width=29, fill='.') +    &
+                                  num2char('EtaSS', width=17, justify='r') + '|' +    &
+                                  num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
 
                   CALL update_log(num2char('', width=29) + num2char(gss, notation='s', width=17, precision=3, justify='r') + '|' + &
                                   num2char(bnu, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
@@ -1273,59 +1380,93 @@ PROGRAM main
         IF (mode .eq. 1) THEN
           IF (ALLOCATED(code)) THEN                  !< obviously, do something only if receiver has recorded some events
 
-            IF (world_rank .eq. 0) CALL update_log('Inverting ' + num2char(SIZE(inverted)) + ' event(s) for receiver ' +  &
-                                              TRIM(recvr(l)%code(1)) + ' in the frequency band ' + num2char(fbands(1,k),  &
-                                              notation='f', precision=1) + '-' + num2char(fbands(2,k), notation='f', precision=1)+ &
-                                              'Hz')
+            IF (SIZE(code) .ge. threshold) THEN
 
-            ! arrange available processes into logic grid
-            CALL build_comms()
-
-            CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
-
-            ! write best-fitting model to disk
-            CALL bestfit(k, [recvr(l)%code(1)], inverted, bestmodel)
-
-            CALL destroy_comms()
-
-            IF (world_rank .eq. 0) THEN
-
-              ! write explored parameters space to disk
-              CALL write_search(k, [recvr(l)%code(1)], inverted, sampled, fit)
-
-              CALL update_log(num2char('Models explored', width=29, fill='.') + num2char(SIZE(fit),width=17, justify='r') + '|')
-
-              CALL watch_stop(tic, mpi_comm_self)
-
-              CALL update_log(num2char('Elapsed time (s)', width=29, fill='.') + num2char(tic, notation = 'f', width = 17,  &
-                              precision = 1, justify='r') + '|', blankline = .false.)
-
-              IF (elastic) THEN
-                gss = bestmodel(1)
-                gpp = gss / bestmodel(2)
-                gps = gpp * bestmodel(3)
-                gsp = gps / 6._r32
-
-                CALL update_log(num2char('Best model parameters', width=29, fill='.') + num2char('EtaPP', width=17, justify='r'  &
-                                ) + '|' + num2char('EtaPS', width=13, justify='r') + '|' + num2char('EtaSP', width=13,    &
-                                justify='r') + '|' + num2char('EtaSS', width=13, justify='r') + '|', blankline = .false.)
-
-                CALL update_log(num2char('', width=29) + num2char(gpp, notation='s', width=17, precision=3, justify='r') + '|' + &
-                                num2char(gps, notation='s', width=13, precision=3, justify='r') + '|' + &
-                                num2char(gsp, notation='s', width=13, precision=3, justify='r') + '|' + &
-                                num2char(gss, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
-
-              ELSE
-                gss = bestmodel(1)
-                bnu = bestmodel(2)
-
-                CALL update_log(num2char('Best model parameters', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + &
-                                '|' + num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
-
-                CALL update_log(num2char('', width=29) + num2char(gss, notation='s', width=17, precision=3, justify='r') + '|' +  &
-                                num2char(bnu, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
-
+              IF (world_rank .eq. 0) THEN
+                CALL update_log('Inverting ' + num2char(SIZE(inverted)) + ' event(s) for receiver ' + TRIM(recvr(l)%code(1)) +  &
+                                ' in the frequency band ' + num2char(fbands(1,k), notation='f', precision=1) + '-' +            &
+                                num2char(fbands(2,k), notation='f', precision=1) + 'Hz')
               ENDIF
+
+              CALL watch_start(tictoc(2), mpi_comm_self)
+
+              ! arrange available processes into logic grid
+              CALL build_comms()
+
+              errors = 0
+
+              IF (comm2 .ne. mpi_comm_null) THEN
+                CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+              ENDIF
+
+              CALL mpi_bcast(errors, 1, mpi_int, 0, mpi_comm_world, ierr)
+
+              IF (world_rank .eq. 0) CALL explain_error()
+
+              IF (errors .gt. 1) CALL mpi_abort(mpi_comm_world, ok, ierr)
+
+              CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
+
+              IF (ok .ne. 0) THEN
+                IF (world_rank .eq. 0) CALL report_error('NA exited with error code: ' + num2char(ok))
+                CALL mpi_abort(mpi_comm_world, ok, ierr)
+              ENDIF
+
+              IF (comm2 .ne. mpi_comm_null) THEN
+                ! write best-fitting model to disk
+                CALL bestfit(k, [recvr(l)%code(1)], inverted, bestmodel)
+                CALL destroy_comms()
+              ENDIF
+
+              IF (world_rank .eq. 0) THEN
+
+                ! write explored parameters space to disk
+                CALL write_search(k, [recvr(l)%code(1)], inverted, sampled, fit)
+
+                CALL update_log(num2char('Models explored', width=29, fill='.') + num2char(SIZE(fit), width=17, justify='r') + '|')
+
+                CALL watch_stop(tictoc(2), mpi_comm_self)
+
+                tictoc(2) = tictoc(2) / 60._r64
+
+                CALL update_log(num2char('Elapsed time (min)', width=29, fill='.') +    &
+                                num2char(tictoc(2), notation='f', width=17, precision=1, justify='r') + '|', blankline = .false.)
+
+                IF (elastic) THEN
+                  gss = bestmodel(1)
+                  gpp = gss / bestmodel(2)
+                  gps = gpp * bestmodel(3)
+                  gsp = gps / 6._r32
+
+                  CALL update_log(num2char('Best model parameters', width=29, fill='.') +    &
+                                  num2char('EtaPP', width=17, justify='r') + '|' +   &
+                                  num2char('EtaPS', width=13, justify='r') + '|' +   &
+                                  num2char('EtaSP', width=13, justify='r') + '|' +   &
+                                  num2char('EtaSS', width=13, justify='r') + '|', blankline = .false.)
+
+                  CALL update_log(num2char('', width=29) + num2char(gpp, notation='s', width=17, precision=3, justify='r') + '|' + &
+                                  num2char(gps, notation='s', width=13, precision=3, justify='r') + '|' + &
+                                  num2char(gsp, notation='s', width=13, precision=3, justify='r') + '|' + &
+                                  num2char(gss, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
+
+                ELSE
+                  gss = bestmodel(1)
+                  bnu = bestmodel(2)
+
+                  CALL update_log(num2char('Best model parameters', width=29, fill='.') +    &
+                                  num2char('EtaSS', width=17, justify='r') + '|' +    &
+                                  num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
+
+                  CALL update_log(num2char('', width=29) + num2char(gss, notation='s', width=17, precision=3, justify='r') + '|' + &
+                                  num2char(bnu, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
+
+                ENDIF
+              ENDIF
+
+            ELSE
+
+              IF (world_rank .eq. 0) CALL update_log('For receiver ' + TRIM(recvr(l)%code(1)) + ' not enough events were found')
+
             ENDIF
 
             DEALLOCATE(envobs, tsobs, nobs, iobs)
@@ -1357,15 +1498,35 @@ PROGRAM main
             CALL update_log(num2char('List of receivers', width=29, fill='.') + show(code), blankline = .false.)
           ENDIF
 
+          CALL watch_start(tictoc(2), mpi_comm_self)
+
           ! arrange available processes into logic grid
           CALL build_comms()
 
-          CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+          errors = 0
 
-          ! write best-fitting model to disk and explored parameters space to disk
-          CALL bestfit(k, code, [current], bestmodel)
+          IF (comm2 .ne. mpi_comm_null) THEN
+            CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+          ENDIF
 
-          CALL destroy_comms()
+          CALL mpi_bcast(errors, 1, mpi_int, 0, mpi_comm_world, ierr)
+
+          IF (world_rank .eq. 0) CALL explain_error()
+
+          IF (errors .gt. 1) CALL mpi_abort(mpi_comm_world, ok, ierr)
+
+          CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
+
+          IF (ok .ne. 0) THEN
+            IF (world_rank .eq. 0) CALL report_error('NA exited with error code: ' + num2char(ok))
+            CALL mpi_abort(mpi_comm_world, ok, ierr)
+          ENDIF
+
+          IF (comm2 .ne. mpi_comm_null) THEN
+            ! write best-fitting model to disk and explored parameters space to disk
+            CALL bestfit(k, code, [current], bestmodel)
+            CALL destroy_comms()
+          ENDIF
 
           IF (world_rank .eq. 0) THEN
 
@@ -1374,9 +1535,11 @@ PROGRAM main
 
             CALL update_log(num2char('Models explored', width=29, fill='.') + num2char(SIZE(fit),width=17, justify='r') + '|')
 
-            CALL watch_stop(tic, mpi_comm_self)
+            CALL watch_stop(tictoc(2), mpi_comm_self)
 
-            CALL update_log(num2char('Elapsed time (s)', width=29, fill='.') + num2char(tic, notation = 'f', width = 17,  &
+            tictoc(2) = tictoc(2) / 60._r64
+
+            CALL update_log(num2char('Elapsed time (min)', width=29, fill='.') + num2char(tictoc(2), notation = 'f', width = 17,  &
                             precision = 1, justify='r') + '|')
 
             IF (elastic) THEN
@@ -1446,9 +1609,11 @@ PROGRAM main
 
   ENDDO                                 !<  end loop over frequency bands
 
-  IF (mode .eq. 0) CALL destroy_comms()
+  CALL watch_stop(tictoc(1), mpi_comm_world)
+  tictoc(1) = tictoc(1) / 60._r64
 
-  IF (world_rank .eq. 0) CALL update_log('Program completed')
+  IF (world_rank .eq. 0) CALL update_log('Program completed in' + num2char(tictoc(1), notation='f', width=10, precision=1) +  &
+                                         ' minutes')
 
   CALL mpi_finalize(ierr)
 

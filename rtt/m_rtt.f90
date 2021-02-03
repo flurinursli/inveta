@@ -160,7 +160,12 @@ MODULE m_rtt
       sr = beta * ts
 
       ! evaluate paaschens' heuristic solution for multiple isotropic scattering at S-wave arrival time and maximum time
-      CALL paasschens([REAL(ts, r64), tcalc], REAL(ts, r64), beta, REAL(eta_s, r64), 0._r64, a)
+      ! hack to reduce numerical instability for forward scattering
+      IF ( (eta_s .ge. 1.0E-02_r32) .and. (nu .gt. 0._r32) ) THEN
+        CALL paasschens([REAL(ts, r64), tcalc], REAL(ts, r64), beta, REAL(eta_s / 10._r32, r64), 0._r64, a)
+      ELSE
+        CALL paasschens([REAL(ts, r64), tcalc], REAL(ts, r64), beta, REAL(eta_s, r64), 0._r64, a)
+      ENDIF
 
       ! estimate imaginary shift: because of the periodicity introduced by the wavenumber summation, energy "a(2)" at time "tmax"
       ! (which will be aliased in time) must be much smaller than energy "a(1)", i.e. "a(2)*exp(-wi*tcalc) << a(1)". This condition
@@ -168,8 +173,8 @@ MODULE m_rtt
       wi = LOG(1.e+05_r64 * a(2) / a(1)) / tcalc
 
       ! set absolute accuracy for numerical integration. Divide by 100 to set relative accuracy to 10^-2
-      ! value raised to 300 in order to further reduce numerical noise
-      epsabs = MAX(MIN(a(1), a(2)) / 300._r64, EPSILON(1._r64))
+      ! value raised to 10^-3 in order to further reduce numerical noise
+      epsabs = MAX(MIN(a(1), a(2)) / 1000._r64, EPSILON(1._r64))
 
       ! define minimum wavenumber for integration (kmin << pi / L, eq. 4.125 of Jensen et al., 2011)
       kmin = pi / (beta * tcalc + sr) / 5._r64
@@ -198,6 +203,9 @@ MODULE m_rtt
       CALL watch_stop(tictoc(2))
 #endif
 #endif
+
+      ! exit immediately if scattering pattern function was not expanded properly
+      IF (ok .ne. 0) RETURN
 
       ! multiply expansion and scattering coefficients
       coef(:) = coef(:) * eta_s
@@ -276,7 +284,7 @@ MODULE m_rtt
 #endif
 #endif
 
-      !$omp parallel do default(shared) private(i, w) reduction(max: ok) firstprivate(gammal, coef, wigner)
+      !$omp parallel do schedule(dynamic) default(shared) private(i, w) reduction(max: ok) firstprivate(gammal, coef, wigner)
       DO i = i0, i1
 
         w = dw * (i - 1)
@@ -311,6 +319,7 @@ MODULE m_rtt
 #ifdef MPI
       ! exchange data inside communicator
       CALL mpi_allgatherv(mpi_in_place, 0, mpi_datatype_null, spectrum, pprank, displs, mpi_double_complex, comm, ierr)
+      CALL mpi_allreduce(mpi_in_place, ok, 1, mpi_int, mpi_max, comm, ierr)
 #endif
 
       DEALLOCATE(gammal, wigner)
@@ -336,7 +345,7 @@ MODULE m_rtt
         e_time(i) = (i - 1) * dt
       ENDDO
 
-      CALL setup_interpolation('linear', 'zero', ok)
+      CALL setup_interpolation('linear', 'zero', ierr)
 
       dtime = time
 
@@ -500,12 +509,12 @@ MODULE m_rtt
       INTEGER(i32)                                                    :: i, j, k, lu, npsi
       INTEGER(c_i32)                                                  :: l
       INTEGER(c_i32),                           PARAMETER             :: m = 0
-      INTEGER(i32),                             PARAMETER             :: ndegree = 20
+      INTEGER(i32),                             PARAMETER             :: ndegree = 30
       REAL(r64)                                                       :: coefficient, rad
       REAL(c_r64)                                                     :: x
       REAL(r64),     ALLOCATABLE,DIMENSION(:)                         :: obs, syn, delta, pattern, psi
       REAL(r64),     ALLOCATABLE,DIMENSION(:,:)                       :: y, mat
-      REAL(r64),                                PARAMETER             :: deg = 1._r64, epsilon = 0.01_r64
+      REAL(r64),                                PARAMETER             :: deg = 0.1_r64, epsilon = 0.01_r64
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
@@ -580,7 +589,7 @@ MODULE m_rtt
       DEALLOCATE(mat)
 
       IF (ok .ne. 0) THEN
-        ok = 1
+        ok = 2
         RETURN
       ENDIF
 
@@ -588,7 +597,7 @@ MODULE m_rtt
 
       syn(:) = 0._r64
 
-      ok = 2
+      ok = 3
 
       ! loop over harmonics and exit when rms error between target and synthesized scattering patterns is less than "epsilon"
       DO j = 0, ndegree
@@ -698,6 +707,7 @@ MODULE m_rtt
 
       i = 0
 
+      !$omp parallel do default(shared) private(j3, j1, j2, l1, l, l2, i, n1, n2, n3, w2, lprod, sm, m1, m2, m, w1)
       DO l1 = 0, lmax
 
         j3 = 2 * l1
@@ -708,7 +718,9 @@ MODULE m_rtt
 
           DO l2 = 0, 2*lmax
 
-            i = i + 1
+            i = l1*(lmax + 1)*(2*lmax + 1) + l*(2*lmax + 1) + l2 + 1
+
+            ! i = i + 1
 
             j2 = 2 * l2
 
@@ -750,6 +762,7 @@ MODULE m_rtt
           ENDDO
         ENDDO
       ENDDO
+      !$omp end parallel do
 
     END SUBROUTINE fill_wigner
 
@@ -1255,6 +1268,7 @@ MODULE m_rtt
 #ifdef MPI
       ! exchange data inside communicator
       CALL mpi_allgatherv(mpi_in_place, 0, mpi_datatype_null, spectrum, pprank, displs, mpi_double_complex, comm, ierr)
+      CALL mpi_allreduce(mpi_in_place, ok, 1, mpi_int, mpi_max, comm, ierr)
 #endif
 
 #ifdef DEBUG
@@ -1272,16 +1286,13 @@ MODULE m_rtt
       ! scaling factor for m-th order scattering
       c0 = 0.5_r64 / (sr * pi**2) / dt
 
-      ! ip = NINT(tp / dt) + 1
-      ! e_multi(1:ip) = 0._r64
-
       ! compensate for imaginary frequency "wi" and add scaling factor
       DO i = 1, nfft
         e_multi(i) = e_multi(i) * EXP(wi * (i - 1) * dt) * c0
         e_time(i) = (i - 1) * dt
       ENDDO
 
-      CALL setup_interpolation('linear', 'zero', ok)
+      CALL setup_interpolation('linear', 'zero', ierr)
 
       dtime = time
 
@@ -1297,8 +1308,6 @@ MODULE m_rtt
 
       ! now "dt" is the actual output time-step
       dt = time(2) - time(1)
-
-      em(1:NINT(tp / dt)) = 0._r64                         !< mute all points up to direct P because of numerical noise
 
       ! ============================================================================================================================
       ! -------------------------------------------------- DIRECT WAVE TERM --------------------------------------------------------
@@ -1317,7 +1326,6 @@ MODULE m_rtt
         e0(i) = e0(i) + v * EXP(-c0 * (time(i) - tp)**2)
         e0(i) = e0(i) + b * EXP(-c0 * (time(i) - ts)**2)
       ENDDO
-
 
 
       ! e0(:)  = 0._r64
@@ -1419,18 +1427,10 @@ MODULE m_rtt
 
       ! see also assumption 2
       b = eta_si * beta
-      ! amin = HUGE(1._r32)
       DO i = 1, npts
         ! envelope(i) = (e0(i) + e1(i) + em(i)) * EXP(-b * time(i))
         envelope(i) = (e0(i) + em(i)) * EXP(-b * time(i))
-        ! amin = MIN(ABS(envelope(i)), amin)
       ENDDO
-
-      ! replace negative values due to numerical errors: this is somewhat redundant
-      ! WHERE (envelope .lt. amin)
-      !   envelope = amin
-      ! END WHERE
-
 
 #ifdef DEBUG
 #ifdef MPI

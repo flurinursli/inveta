@@ -1,15 +1,17 @@
 FC = mpif90
 
-# flags GCC
-FFLAGS = -g -std=f2008 -fcheck=all -fbacktrace
-#FFLAGS = -O3 -std=f2008 -march=native
+# flags GCC (add "-march=native" if compute node eqv. compile node)
+#OPT = -g -std=f2008 -fcheck=all -fbacktrace
+OPT = -O3 -std=f2008 -march=native
 
-# flags INTEL
-#FFLAGS = -O3 -xHost
+# flags INTEL (add "-xHost" if compute node eqv. compile node)
+#OPT = -O3 -xHost
+
+OMP = -fopenmp
+#OMP = -qopenmp
 
 # flags for lapack, fftw, etc.
 #MKL = -DMKL
-MPI = -DMPI
 DEBUG = -DDEBUG
 #INCL_FFTW = /opt/intel/mkl/include/fftw
 INCL_FFTW = $(FFTW_PATH)/include

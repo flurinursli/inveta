@@ -6,8 +6,8 @@ LIB_NAME = libna.a
 
 na: dirs $(LIB_NAME)
 
-$(F90_OBJ) : %.o : %.f90 
-	$(FC) $(FFLAGS) -cpp -I../common/include -c -o $@ $<
+$(F90_OBJ) : %.o : %.f90
+	$(FC) $(OPT) -I../common/include -c -o $@ $<
 
 $(LIB_NAME) : $(F90_OBJ)
 	ar qc $@ $(F90_OBJ)
