@@ -127,7 +127,7 @@ MODULE m_na
 
       DO j = 1, itermax + 1
 
-        DO i = 1, ns
+        DO i = rank + 1, ns, ntasks
 
           i0 = 1 + (i - 1 + ntot) * nd
           i1 = i0 + nd - 1
@@ -135,7 +135,7 @@ MODULE m_na
           CALL transform2raw(na_models(i0:i1), nd, range, scales, na_model)
 
           i0 = ntot + i
-          misfit(i0) = misfun(nd, na_model)
+          misfit(i0) = misfun(nd, na_model, j, i)
 
         ENDDO
 
@@ -143,7 +143,7 @@ MODULE m_na
 
         time_fwd = time_fwd + tic
 
-        ! CALL mpi_allreduce(mpi_in_place, misfit(ntot + 1), ns, mpi_real, mpi_sum, comm, ierr)
+        CALL mpi_allreduce(mpi_in_place, misfit(ntot + 1), ns, mpi_real, mpi_sum, comm, ierr)
 
         CALL statistics(misfit, ns, j, ntot, mfitmin, mfitminc, mfitmean, mopt, ncells, work_NA2, iwork_NA1, iwork_NA2, mfitord, &
                         ierr)

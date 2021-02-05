@@ -30,26 +30,28 @@ MODULE m_inveta
 
   CHARACTER(:), ALLOCATABLE                 :: acf                                        !< autocorrelation function (scalar RTT)
   INTEGER(i32)                              :: world_size, world_rank
-  INTEGER(i32)                              :: comm1, comm2
+  INTEGER(i32)                              :: comm1, comm2, comm3
   INTEGER(i32)                              :: mode                                       !< inversion mode
   INTEGER(i32)                              :: threshold                                  !< minimum number of receivers for event
   INTEGER(i32)                              :: errors
   INTEGER(i32)                              :: nsi, ns, nr, itermax, seed                 !< NA parameters
   INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: iobs, nobs                                 !< observations per recording
-  INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: pprank1, pprank2
+  INTEGER(i32), ALLOCATABLE, DIMENSION(:)   :: pprank1, pprank2, pprank3
   INTEGER(i32), ALLOCATABLE, DIMENSION(:,:) :: gs, ge                                     !< global indices for cartesian topology
   LOGICAL                                   :: elastic                                    !< scalar or elastic RTT
   LOGICAL                                   :: noweight                                   !< disable weighted linear regression
-  REAL(r32)                                 :: hurst                                      !< Hurst exponent when acf=Von Karman
   REAL(r32)                                 :: drespl
   REAL(r32)                                 :: beta
   REAL(r32)                                 :: fwin
   REAL(r32)                                 :: tlim
   REAL(r32)                                 :: pdwindow, sdwindow, pcwindow, scwindow     !< windows for direct and coda P-/S-waves
   REAL(r32),                 DIMENSION(8)   :: error_params
-  REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: etass, etass2pp, etaps2pp, nu              !< scattering parameters
+  REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: etass, etass2pp, etaps2pp                  !< scattering parameters
+  REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: nu, hurst
   REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: tobs, envobs, tpobs, tsobs                 !< observables used during inversion
   REAL(r32),    ALLOCATABLE, DIMENSION(:,:) :: fbands                                     !< frequency bands for inversion
+  REAL(r64)                                 :: coefficient
+  REAL(r64),                 DIMENSION(2)   :: cf
 
   TYPE :: info
     CHARACTER(200)                           :: folder
@@ -139,9 +141,9 @@ MODULE m_inveta
       REAL(r32),                  DIMENSION(:),                     INTENT(IN) :: bestmodel
       CHARACTER(:),  ALLOCATABLE                                               :: fo
       INTEGER(i32)                                                             :: lu, lf, hf, i, j, k, l, n, p, is, ie, j0, j1, ok
-      INTEGER(i32)                                                             :: rank, ierr, imod, req
+      INTEGER(i32)                                                             :: rank, ierr, req
       INTEGER(i32),               DIMENSION(0:SIZE(pprank2)-1)                 :: displs, pprank
-      REAL(r32)                                                                :: gpp, gps, gsp, gss, gi, bnu, t, const
+      REAL(r32)                                                                :: gpp, gps, gsp, gss, gi, aksq, kappa, t, const
       REAL(r32),                                                    PARAMETER  :: tau = 0.25_r32, wp = 1._r32, ws = 23.4_r32
       REAL(r32),     ALLOCATABLE, DIMENSION(:)                                 :: time, envelope
       REAL(r32),                  DIMENSION(SUM(nobs))                         :: delta, weight, b, tobs
@@ -159,8 +161,9 @@ MODULE m_inveta
         gps = gpp * bestmodel(3)
         gsp = gps / 6._r32
       ELSE
-        gss = bestmodel(1)
-        bnu = bestmodel(2)
+        gss   = bestmodel(1)
+        aksq  = bestmodel(2)          !< nu
+        kappa = bestmodel(3)          !< hurst
       ENDIF
 
       gi = 0._r32
@@ -190,7 +193,13 @@ MODULE m_inveta
           IF (elastic) THEN
             WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi * beta
           ELSE
-            WRITE(lu, *) mean(fbands(:,f)), gss, bnu, gi * beta
+            IF ( (nu(1) .eq. nu(2)) .and. (hurst(1) .eq. hurst(2)) ) THEN
+              WRITE(lu, *) mean(fbands(:,f)), gss, gi * beta, gm(gss, aksq, kappa)
+            ELSEIF (hurst(1) .eq. hurst(2)) THEN
+              WRITE(lu, *) mean(fbands(:,f)), gss, aksq, gi * beta, gm(gss, aksq, kappa)
+            ELSE
+              WRITE(lu, *) mean(fbands(:,f)), gss, aksq, kappa, gi * beta, gm(gss, aksq, kappa)
+            ENDIF
           ENDIF
 
           CLOSE(lu)
@@ -208,7 +217,13 @@ MODULE m_inveta
             IF (elastic) THEN
               WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi * beta
             ELSE
-              WRITE(lu, *) mean(fbands(:,f)), gss, bnu, gi * beta
+              IF ( (nu(1) .eq. nu(2)) .and. (hurst(1) .eq. hurst(2)) ) THEN
+                WRITE(lu, *) mean(fbands(:,f)), gss, gi * beta, gm(gss, aksq, kappa)
+              ELSEIF (hurst(1) .eq. hurst(2)) THEN
+                WRITE(lu, *) mean(fbands(:,f)), gss, aksq, gi * beta, gm(gss, aksq, kappa)
+              ELSE
+                WRITE(lu, *) mean(fbands(:,f)), gss, aksq, kappa, gi * beta, gm(gss, aksq, kappa)
+              ENDIF
             ENDIF
 
             CLOSE(lu)
@@ -249,9 +264,9 @@ MODULE m_inveta
         ENDDO
 
         IF (elastic) THEN
-          CALL rtt(comm1, pprank1, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
+          CALL rtt(comm3, pprank3, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
         ELSE
-          CALL rtt(comm1, pprank1, time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
+          CALL rtt(comm3, pprank3, time, tsobs(j) + tau, gss, gi, beta, acf, kappa, aksq, tau, envelope, ok)
         ENDIF
 
         IF (mode .le. 1) THEN
@@ -298,7 +313,7 @@ MODULE m_inveta
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
-    REAL(r32) FUNCTION misfit(nd, mpar)
+    REAL(r32) FUNCTION misfit(nd, mpar, iter, imod)
 
       ! Purpose:
       !   to return misfit between observed and simulated coda, where the computation of the latter is based on the RTT. The misfit
@@ -312,10 +327,12 @@ MODULE m_inveta
 
       INTEGER(i32),                                                INTENT(IN) :: nd
       REAL(r32),                 DIMENSION(nd),                    INTENT(IN) :: mpar
+      INTEGER(i32),                                                INTENT(IN) :: iter, imod
       INTEGER(i32)                                                            :: i, j, j0, j1, k, l, n, p, is, ie, ok, rank, ierr
-      INTEGER(i32)                                                            :: imod, req
+      INTEGER(i32)                                                            :: req
+      INTEGER(i32),              DIMENSION(2)                                 :: dbgrank
       INTEGER(i32),              DIMENSION(0:SIZE(pprank2)-1)                 :: displs, pprank
-      REAL(r32)                                                               :: gss, gsp, gpp, gps, bnu, t
+      REAL(r32)                                                               :: gss, gsp, gpp, gps, aksq, kappa, t
       REAL(r32),                                                   PARAMETER  :: gi = 0._r32, tau = 0.25_r32
       REAL(r32),                                                   PARAMETER  :: wp = 1._r32, ws = 23.4_r32
       REAL(r32),    ALLOCATABLE, DIMENSION(:)                                 :: time, envelope
@@ -336,8 +353,9 @@ MODULE m_inveta
         gps = gpp * mpar(3)
         gsp = gps / 6._r32
       ELSE
-        gss = mpar(1)
-        bnu = mpar(2)
+        gss   = mpar(1)
+        aksq  = mpar(2)          !< nu
+        kappa = mpar(3)          !< hurst
       ENDIF
 
 #ifdef DEBUG
@@ -350,9 +368,14 @@ MODULE m_inveta
       CALL watch_stop(tictoc(1), comm2)
       CALL mpi_allreduce(mpi_in_place, tictoc, 2, mpi_double, mpi_max, comm2, ierr)
 
-      IF (world_rank .eq. 0) THEN
-        CALL update_log(num2char('Max Exe vs. Wait Time', width=29, fill='.') +  &
-                        num2char('[' + num2char(tictoc(1), notation='s', width=10, precision=3) + ',' +   &
+      CALL mpi_comm_rank(comm2, dbgrank(1), ierr)
+      CALL mpi_comm_rank(comm3, dbgrank(2), ierr)
+
+      IF (ALL(dbgrank .eq. 0)) THEN
+        CALL update_log(num2char('Iter, Model, Exe, Wait', width=29, fill='.')         +     &
+                        num2char('[' + num2char(iter, width=4)                   + ',' +     &
+                        num2char(imod, width=4)                                  + ',' +     &
+                        num2char(tictoc(1), notation='s', width=10, precision=3) + ',' +     &
                         num2char(tictoc(2), notation='s', width=11, precision=3) + ']', width=36, justify='r'), blankline=.false.)
       ENDIF
 #endif
@@ -372,6 +395,119 @@ MODULE m_inveta
       CALL mpi_allreduce(mpi_in_place, errors, 1, mpi_int, mpi_max, comm2, ierr)
 
     END FUNCTION misfit
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
+    REAL(r32) FUNCTION gm(g0, aksq, kappa)
+
+      ! Purpose:
+      !   To compute the tranport (momentum transfer) scattering coefficient as defined in Eq. 4.28 of Sato et al., 2012.
+      !
+      ! Revisions:
+      !     Date                    Description of change
+      !     ====                    =====================
+      !   11/01/21                  original version
+      !
+
+      REAL(r32),                     INTENT(IN) :: g0, aksq, kappa
+      INTEGER(i32)                              :: neval, ier
+      INTEGER(i32)                              :: last
+      INTEGER(i32),                  PARAMETER  :: limit = 500
+      INTEGER(i32),                  PARAMETER  :: lenw = limit * 4
+      INTEGER(i32), DIMENSION(limit)            :: iwork
+      REAL(r64)                                 :: abserr, x
+      REAL(r64),                     PARAMETER  :: pi = 3.14159265358979323846_r64
+      REAL(r64),                     PARAMETER  :: epsabs = 1.0E-09_r64
+      REAL(r64),                     PARAMETER  :: epsrel = 1.0E-07_r64
+      REAL(r64),    DIMENSION(lenw)             :: work
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      ! value afet epsrel can be between 1 and 6 (increase accuracy)
+
+      ! integrate scattering pattern function between 0 and pi
+      IF (acf .eq. 'vk') THEN
+
+        cf(1) = 4._r64 * aksq
+        cf(2) = kappa + 1.5_r64
+
+        IF (aksq .eq. 0._r64) THEN
+          coefficient = 1._r64
+        ELSE
+          coefficient = cf(1) * (kappa + 0.5_r64) / (1._r64 - (cf(1) + 1)**(-0.5_r64 - kappa))
+        ENDIF
+
+        CALL dqag(vkfun, 0._r64, pi, epsabs, epsrel, 2, x, abserr, neval, ier, limit, lenw, last, iwork, work)
+
+      ELSE
+
+        cf(1) = aksq
+
+        IF (aksq .eq. 0._r64) THEN
+          coefficient = 1._r64
+        ELSE
+          coefficient = cf(1) / (1._r64 - EXP(-cf(1)))
+        ENDIF
+
+        CALL dqag(gsfun, 0._r64, pi, epsabs, epsrel, 2, x, abserr, neval, ier, limit, lenw, last, iwork, work)
+
+      ENDIF
+
+      gm = 0.5_r32 * g0 * x
+
+    END FUNCTION
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
+    REAL(r64) FUNCTION vkfun(psi)
+
+      ! Purpose:
+      !   To return the weighted scattering pattern function at angle "psi" for Von Karman media.
+      !
+      ! Revisions:
+      !     Date                    Description of change
+      !     ====                    =====================
+      !   11/01/21                  original version
+      !
+
+      REAL(r64), INTENT(IN) :: psi
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      vkfun = coefficient / (1._r64 + cf(1) * SIN(psi / 2._r64)**2)**cf(2)
+
+      vkfun = vkfun * SIN(psi) * (1._r64 - COS(psi))
+
+    END FUNCTION vkfun
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
+    REAL(r64) FUNCTION gsfun(psi)
+
+      ! Purpose:
+      !   To return the weighted scattering pattern function at angle "psi" for Gaussian media.
+      !
+      ! Revisions:
+      !     Date                    Description of change
+      !     ====                    =====================
+      !   11/01/21                  original version
+      !
+
+      REAL(r64), INTENT(IN) :: psi
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      gsfun = coefficient * EXP(-cf(1) * SIN(psi / 2._r64)**2)
+
+      gsfun = gsfun * SIN(psi) * (1._r64 - COS(psi))
+
+    END FUNCTION gsfun
 
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
     !===============================================================================================================================
@@ -496,34 +632,36 @@ MODULE m_inveta
 
     SUBROUTINE build_comms()
 
-      INTEGER(i32)                              :: cartopo, ierr, nthreads, p, rank, ntasks
-      INTEGER(i32),                   PARAMETER :: ndims = 2
+      INTEGER(i32)                              :: cartopo, ierr, nthreads, rank, ntasks
+      INTEGER(i32),                   PARAMETER :: ndims = 3
       INTEGER(i32), DIMENSION(ndims)            :: dims, npts, coords
       LOGICAL,                        PARAMETER :: reorder = .true.
-      LOGICAL,      DIMENSION(ndims), PARAMETER :: isperiodic = [.false., .false.]
+      LOGICAL,      DIMENSION(ndims), PARAMETER :: isperiodic = [.false., .false., .false.]
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
       nthreads = 1
       !$ nthreads = omp_get_max_threads()
 
-      ! compute max number of processes that can work on the same envelope
-      p = MIN(world_size, query_fft_size() / nthreads)
-
-      ! logic grid has workable FFT points (for RTT) along x and number of observations along y
-      npts = [query_fft_size(), SIZE(nobs)]
+      ! logic grid of points to be shared amongst cpus
+      npts = [ns, SIZE(nobs), query_fft_size() / nthreads]
 
       ! return optimal cpu configuration. In any case, all cpus are used.
-      CALL best_cpu_grid(p, world_size, SIZE(nobs), dims)
+      CALL best_cpu_grid(world_size, npts, dims)
 
-      IF (world_rank .eq. 0) CALL update_log(num2char('Processors grid', width=29, fill='.') + num2char('[' + num2char(dims(1)) +  &
-                             ', ' + num2char(dims(2)) + ']', width=18, justify='r'))
+      IF (world_rank .eq. 0) THEN
+        CALL update_log(num2char('Processors grid', width=29, fill='.') +    &
+                        num2char('[' + num2char(dims(1)) + ', ' + num2char(dims(2)) + ', ' + num2char(dims(3)) + ']', width=18,  &
+                        justify='r') + num2char('(' + num2char(world_size - PRODUCT(dims)) + ' left out)', width=18, justify='r'))
+      ENDIF
 
       ! create topology
       CALL mpi_cart_create(mpi_comm_world, ndims, dims, isperiodic, reorder, cartopo, ierr)
 
+      ! set new communicators to null because some cpus may be left out
       comm1 = mpi_comm_null
       comm2 = mpi_comm_null
+      comm3 = mpi_comm_null
 
       IF (cartopo .ne. mpi_comm_null) THEN
 
@@ -535,6 +673,9 @@ MODULE m_inveta
         ! return process coordinates in current topology
         CALL mpi_cart_coords(cartopo, rank, ndims, coords, ierr)
 
+        ! remove any multithreading to assign indices
+        npts(3) = query_fft_size()
+
         ! return first/last index along each direction for the calling process. Note: first point has first index equal to 1.
         CALL coords2index(npts, dims, coords, gs(:, rank), ge(:, rank))
 
@@ -545,6 +686,7 @@ MODULE m_inveta
         ! build communicators
         CALL build_pencil(cartopo, 0, comm1, pprank1)
         CALL build_pencil(cartopo, 1, comm2, pprank2)
+        CALL build_pencil(cartopo, 2, comm3, pprank3)
 
         ! release cartesian topology
         CALL mpi_comm_free(cartopo, ierr)
@@ -559,113 +701,234 @@ MODULE m_inveta
     !===============================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
-    SUBROUTINE best_cpu_grid(n, x, y, factor)
+    SUBROUTINE best_cpu_grid(cpus, npts, dims)
 
-      INTEGER(i32)                              :: n, x, y
-      INTEGER(i32),              DIMENSION(2)   :: factor
-      INTEGER(i32)                              :: i, j, nx, ny
-      INTEGER(i32), ALLOCATABLE, DIMENSION(:,:) :: fx, fy
+      ! Purpose:
+      ! To return an optimal grid of process according to some specific cost function.
+      !
+      ! Revisions:
+      !     Date                    Description of change
+      !     ====                    =====================
+      !   11/01/21                  original version
+      !
+
+      INTEGER(i32),                            INTENT(IN)  :: cpus
+      INTEGER(i32),              DIMENSION(3), INTENT(IN)  :: npts
+      INTEGER(i32),              DIMENSION(3), INTENT(OUT) :: dims
+      INTEGER(i32)                                         :: i, j, k, l, c
+      INTEGER(i32)                                         :: n2, n3
+      INTEGER(i32)                                         :: a, b
+      INTEGER(i32),              DIMENSION(3)              :: v1, v2
+      INTEGER(i32), ALLOCATABLE, DIMENSION(:,:)            :: fact3, fact2
+      INTEGER(i32), ALLOCATABLE, DIMENSION(:,:)            :: list
+      REAL(r32)                                            :: val, minimum
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
-      factor(:) = 0
+      minimum = HUGE(1._r32)
 
-      ! define number of processes along each direction
-      CALL factorization(x, fx)
-      CALL factorization(y, fy)
+      c = 0
 
-      nx = SIZE(fx, 2)
-      ny = SIZE(fy, 2)
+      ! factorise the number of available processes (return pairs)
+      CALL factorization(world_size, fact3)
 
-      ! try to find common factors, start from higher values to avoid trivial combinations as [n, 1]
-      outer: DO i = nx, 1, -1
-        IF (fx(2, i) .le. n) THEN
-          DO j = 1, ny
-            IF (ANY(fy(:, j) .eq. fx(1, i))) THEN
-              factor = [fx(2, i), fx(1, i)]
-              EXIT outer
-            ENDIF
-          ENDDO
-        ENDIF
-        IF (fx(1, i) .le. n) THEN
-          DO j = ny, 1, -1
-            IF (ANY(fy(:, j) .eq. fx(2, i))) THEN
-              factor = [fx(1, i), fx(2, i)]
-              EXIT outer
-            ENDIF
-          ENDDO
-        ENDIF
-      ENDDO outer
+      ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
+      ! factorise each pair member (thus resulting in a triplet of numbers), evaluate cost function and eventually store triplet
+      ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
 
-      ! if no common factors were found, some cpus will get some work than others
-      IF (ALL(factor .eq. 0)) THEN
+      ! number of pairs found
+      n3 = SIZE(fact3, 2)
 
-        nx = HUGE(0)
+      ! allocate a list where to store all the factorized triplets. Factor of 10 seems to be large enough for 200k processes
+      ALLOCATE(list(3, n3 * 10))
 
-        DO i = MIN(n, x), 1, -1
-          ny = x / i
-          IF (x - ny*i .lt. nx) THEN
-            IF (ny .le. y) THEN
-              nx = x - ny*i
-              factor = [i, ny]
-            ENDIF
+      list(:,:) = 0
+
+      ! loop over factorized processes
+      DO l = 1, n3
+
+        ! loop over pair members
+        DO k = 1, 2
+
+          IF (k .eq. 1) THEN
+            a = fact3(1, l)
+            b = fact3(2, l)
+          ELSE
+            b = fact3(1, l)
+            a = fact3(2, l)
           ENDIF
+
+          ! factorization of a number returns a new pair
+          CALL factorization(b, fact2)
+
+          n2 = SIZE(fact2, 2)
+
+          ! loop over new pairs
+          DO j = 1, n2
+
+            ! build candidate triplet
+            v1 = [a, fact2(:, j)]
+
+            ! skip to next pair if current triplet already analysed ("v1" is already in "list")
+            IF (match() .eqv. .true.) CYCLE
+
+            c = c + 1
+
+            ! triplet is new: add it to the list
+            list(:, c) = v1
+
+            ! evaluate cost function for all three possible arrangements (permutations) of the triplet
+            DO i = 0, 2
+
+              v1 = CSHIFT(v1, 1)
+
+              ! evaluate cost function
+              val = cost_fun(npts, v1)
+
+              IF (val .lt. minimum) THEN
+                dims    = v1
+                minimum = val
+              ENDIF
+
+              v2 = [v1(1), v1(3), v1(2)]
+
+              val = cost_fun(npts, v2)
+
+              IF (val .lt. minimum) THEN
+                dims    = v2
+                minimum = val
+              ENDIF
+
+            ENDDO
+            ! end permutations
+
+          ENDDO
+          ! end loop over factor pairs for "a/b"
+
         ENDDO
+        ! end loop over "a/b"
 
-      ENDIF
+      ENDDO
+      ! end loop over factor pairs for "world_size"
 
-      DEALLOCATE(fx, fy)
+      DEALLOCATE(fact3, fact2, list)
 
       CONTAINS
 
-        SUBROUTINE factorization(n, factors)
+        LOGICAL FUNCTION match()
 
-          INTEGER(i32),                              INTENT(IN)  :: n
-          INTEGER(i32), ALLOCATABLE, DIMENSION(:,:), INTENT(OUT) :: factors
-          INTEGER(i32)                                           :: i, c, s
-          INTEGER(i32)                                           :: x
-          INTEGER(i32), ALLOCATABLE, DIMENSION(:,:)              :: buffer
+          INTEGER(i32) :: i
 
           !-------------------------------------------------------------------------------------------------------------------------
 
-          ! max possible number of factors
-          s = FLOOR(SQRT(REAL(n)))
+          match = .false.
 
-          ALLOCATE(buffer(2, s))
-
-          buffer(:,:) = 0
-
-          ! test factors
-          DO i = 1, s
-
-            x = n / i
-
-            IF (MOD(n, i) .eq. 0) THEN
-              buffer(1, i) = i                          !< add factor ...
-              buffer(2, i) = x                          !< ... and its companion
-            ENDIF
-
+          DO i = 1, c
+            match = ANY(v1(1) .eq. list(:, i)) .and. ANY(v1(2) .eq. list(:, i)) .and. ANY(v1(3) .eq. list(:, i))
+            IF (match .eqv. .true.) EXIT
           ENDDO
 
-          ! actual factors found
-          i = COUNT(buffer(1, :) .ne. 0)
-
-          ALLOCATE(factors(2, i))
-
-          ! copy factors to output array
-          c = 0
-          DO i = 1, s
-            IF (buffer(1, i) .ne. 0) THEN
-              c = c + 1
-              factors(:, c) = buffer(:, i)
-            ENDIF
-          ENDDO
-
-          DEALLOCATE(buffer)
-
-        END SUBROUTINE factorization
+        END FUNCTION match
 
     END SUBROUTINE best_cpu_grid
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
+    SUBROUTINE factorization(n, factors)
+
+      ! Purpose:
+      ! To compute the factorization of an integer number based on the trial division method. For example, for "n=12" the output looks
+      ! like "[1 12; 2 6; 3 4]"
+      !
+      ! Revisions:
+      !     Date                    Description of change
+      !     ====                    =====================
+      !   11/01/21                  original version
+      !
+
+      INTEGER(i32),                              INTENT(IN)  :: n
+      INTEGER(i32), ALLOCATABLE, DIMENSION(:,:), INTENT(OUT) :: factors
+      INTEGER(i32)                                           :: i, c, s
+      INTEGER(i32)                                           :: x
+      INTEGER(i32), ALLOCATABLE, DIMENSION(:,:)              :: buffer
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      ! max possible number of factors
+      s = FLOOR(SQRT(REAL(n, r32)))
+
+      ALLOCATE(buffer(2, s))
+
+      buffer(:,:) = 0
+
+      ! test factors
+      DO i = 1, s
+
+        x = n / i
+
+        IF (MOD(n, i) .eq. 0) THEN
+          buffer(1, i) = i                          !< add factor ...
+          buffer(2, i) = x                          !< ... and its companion
+        ENDIF
+
+      ENDDO
+
+      ! actual factors found
+      i = COUNT(buffer(1, :) .ne. 0)
+
+      ALLOCATE(factors(2, i))
+
+      ! copy factors to output array
+      c = 0
+      DO i = 1, s
+        IF (buffer(1, i) .ne. 0) THEN
+          c = c + 1
+          factors(:, c) = buffer(:, i)
+        ENDIF
+      ENDDO
+
+      DEALLOCATE(buffer)
+
+    END SUBROUTINE factorization
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+
+    REAL(r32) FUNCTION cost_fun(npts, dims)
+
+      ! Purpose:
+      ! To return a cost estimate based on the size of a grid block assigned to each process, where the cost is represented by differences
+      ! along each side (the goal is to having blocks in shape of cubes).
+      !
+      ! Revisions:
+      !     Date                    Description of change
+      !     ====                    =====================
+      !   11/01/21                  original version
+      !
+
+      INTEGER(i32), DIMENSION(3), INTENT(IN)  :: npts, dims           !< number of points and processes in each direction
+      REAL(r32),    DIMENSION(3)              :: side                 !< grid nodes in a block along each direction
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      side = REAL(npts, r32) / REAL(dims, r32)
+
+      !cost_fun = ABS(side(1) - side(2)) + ABS(side(1) - side(3)) + ABS(side(2) - side(3))
+
+      IF (ANY(side .lt. 1._r32)) THEN
+        cost_fun = HUGE(0._r32)                                      !< we cannot have more cpus than points
+      ELSE
+        IF (ANY(nu .gt. 0._r32)) THEN
+          cost_fun = side(1) + side(2) + side(3) * 1.0E+03_r32       !< favor more cpus on RTT for fwd scattering
+        ELSE
+          cost_fun = side(1) + side(2) + side(3) * 1.0E-03_r32       !< hinder cpus on RTT for iso scattering
+        ENDIF
+      ENDIF
+
+    END FUNCTION cost_fun
 
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
     !===============================================================================================================================
@@ -677,10 +940,11 @@ MODULE m_inveta
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
-      DEALLOCATE(pprank1, pprank2)
+      DEALLOCATE(pprank1, pprank2, pprank3)
 
       CALL mpi_comm_free(comm1, ierr)
       CALL mpi_comm_free(comm2, ierr)
+      CALL mpi_comm_free(comm3, ierr)
 
     END SUBROUTINE destroy_comms
 
@@ -706,7 +970,7 @@ MODULE m_inveta
       INTEGER(i32), ALLOCATABLE, DIMENSION(:),             INTENT(OUT) :: n
       INTEGER(i32)                                                     :: i, ierr, rank, ntasks, orank, ontasks
       INTEGER(i32),              DIMENSION(0:world_size-1)             :: color
-      LOGICAL                                                          :: bool
+      LOGICAL,                   DIMENSION(2)                          :: bool
 
       !-----------------------------------------------------------------------------------------------------------------------------
 
@@ -720,13 +984,19 @@ MODULE m_inveta
 
         ! pencil oriented along x-axis
         IF (dir .eq. 0) THEN
-          bool = (gs(2, i) .eq. gs(2, rank)) .and. (ge(2, i) .eq. ge(2, rank))
+          bool(1) = (gs(2, i) .eq. gs(2, rank)) .and. (ge(2, i) .eq. ge(2, rank))
+          bool(2) = (gs(3, i) .eq. gs(3, rank)) .and. (ge(3, i) .eq. ge(3, rank))
         ! pencil oriented along y-axis
         ELSEIF (dir .eq. 1) THEN
-          bool = (gs(1, i) .eq. gs(1, rank)) .and. (ge(1, i) .eq. ge(1, rank))
+          bool(1) = (gs(1, i) .eq. gs(1, rank)) .and. (ge(1, i) .eq. ge(1, rank))
+          bool(2) = (gs(3, i) .eq. gs(3, rank)) .and. (ge(3, i) .eq. ge(3, rank))
+        ! pencil oriented along z-axis
+        ELSEIF (dir .eq. 2) THEN
+          bool(1) = (gs(1, i) .eq. gs(1, rank)) .and. (ge(1, i) .eq. ge(1, rank))
+          bool(2) = (gs(2, i) .eq. gs(2, rank)) .and. (ge(2, i) .eq. ge(2, rank))
         ENDIF
 
-        IF (bool .eqv. .true.) color(i) = i + 1
+        IF (ALL(bool .eqv. .true.)) color(i) = i + 1
 
       ENDDO
 
@@ -860,7 +1130,7 @@ PROGRAM main
   COMPLEX(r32),  ALLOCATABLE, DIMENSION(:)   :: analytic, spectrum
   INTEGER(i32)                               :: ierr, ok, lu, n, i, j, k, p, l, is, ie, pts, rank
   INTEGER(i32),               DIMENSION(2)   :: v
-  REAL(r32)                                  :: dt, t, gss, gpp, gsp, gps, bnu
+  REAL(r32)                                  :: dt, t, gss, gpp, gsp, gps, aksq, kappa
   REAL(r64),                  DIMENSION(2)   :: tictoc
   REAL(r32),     ALLOCATABLE, DIMENSION(:)   :: time, trespl, h, envlp, respl, bestmodel, lrange, hrange, sampled, fit
   REAL(r32),     ALLOCATABLE, DIMENSION(:,:) :: timeseries
@@ -958,17 +1228,17 @@ PROGRAM main
       CALL update_log(num2char('', width=29) + num2char(scwindow, notation = 'f', width=17, precision=3, justify='r') + '|' +   &
                       num2char(tlim, notation='f', width=13, precision=1) + '|', blankline = .false.)
       CALL update_log(num2char('Parameters search range', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + '|' +  &
-                      num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
+                      num2char('Nu', width=13, justify='r') + '|' + num2char('Hurst', width=13, justify='r') + '|',               &
+                      blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(etass(1), notation='s', width=8, precision=1, justify='r') + ',' +  &
-                      num2char(etass(2),    notation='s', width=8, precision=1) + '|' +    &
-                      num2char(nu(1), notation='f', width=6, precision=1, justify='r') + ',' +      &
-                      num2char(nu(2), notation='f', width=6, precision=1) + '|' , blankline = .false.)
+                      num2char(etass(2),    notation='s', width=8, precision=1) + '|' +                      &
+                      num2char(nu(1), notation='f', width=6, precision=1, justify='r') + ',' +         &
+                      num2char(nu(2), notation='f', width=6, precision=1) + '|' +                      &
+                      num2char(hurst(1), notation='f', width=6, precision=1, justify='r') + ',' +      &
+                      num2char(hurst(2), notation='f', width=6, precision=1) + '|', blankline = .false.)
       IF (ANY(nu .ne. 0._r32)) THEN
         CALL update_log(num2char('acf of choice', width=29, fill='.') + num2char(acf, width=17, justify='r') + '|',    &
                         blankline = .false.)
-        IF (acf .eq. 'vk')  &
-        CALL update_log(num2char('Hurst exponent', width=29, fill='.') + num2char(hurst, notation='f', width=17, precision=3,   &
-                        justify='r') + '|', blankline = .false.)
       ENDIF
     ENDIF
 
@@ -1035,10 +1305,10 @@ PROGRAM main
     CALL mpi_bcast(pdwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(pcwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
   ELSE
-    IF (world_rank .ne. 0) ALLOCATE(nu(2))
+    IF (world_rank .ne. 0) ALLOCATE(nu(2), hurst(2))
     IF (world_rank .ne. 0) ALLOCATE(CHARACTER(2) :: acf)
     CALL mpi_bcast(nu, 2, mpi_real, 0, mpi_comm_world, ierr)
-    CALL mpi_bcast(hurst, 1, mpi_real, 0, mpi_comm_world, ierr)
+    CALL mpi_bcast(hurst, 2, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(acf, 2, mpi_character, 0, mpi_comm_world, ierr)
   ENDIF
 
@@ -1051,8 +1321,8 @@ PROGRAM main
     lrange = [etass(1), etass2pp(1), etaps2pp(1)]
     hrange = [etass(2), etass2pp(2), etaps2pp(2)]
   ELSE
-    lrange = [etass(1), nu(1)]
-    hrange = [etass(2), nu(2)]
+    lrange = [etass(1), nu(1), hurst(1)]
+    hrange = [etass(2), nu(2), hurst(2)]
   ENDIF
 
   ALLOCATE(bestmodel(SIZE(lrange)))
@@ -1286,8 +1556,8 @@ PROGRAM main
 
               errors = 0
 
-              IF (comm2 .ne. mpi_comm_null) THEN
-                CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+              IF (comm1 .ne. mpi_comm_null) THEN
+                CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
               ENDIF
 
               CALL mpi_bcast(errors, 1, mpi_int, 0, mpi_comm_world, ierr)
@@ -1303,7 +1573,7 @@ PROGRAM main
                 CALL mpi_abort(mpi_comm_world, ok, ierr)
               ENDIF
 
-              IF (comm2 .ne. mpi_comm_null) THEN
+              IF (comm1 .ne. mpi_comm_null) THEN
                 CALL bestfit(k, [recvr(l)%code(1)], [current], bestmodel)
                 CALL destroy_comms()
               ENDIF
@@ -1341,15 +1611,18 @@ PROGRAM main
                                   num2char(gss, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
 
                 ELSE
-                  gss = bestmodel(1)
-                  bnu = bestmodel(2)
+                  gss   = bestmodel(1)
+                  aksq  = bestmodel(2)
+                  kappa = bestmodel(3)
 
                   CALL update_log(num2char('Best model parameters', width=29, fill='.') +    &
                                   num2char('EtaSS', width=17, justify='r') + '|' +    &
-                                  num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
+                                  num2char('Nu', width=13, justify='r')    + '|' +    &
+                                  num2char('Hurst', width=13, justify='r') + '|', blankline = .false.)
 
                   CALL update_log(num2char('', width=29) + num2char(gss, notation='s', width=17, precision=3, justify='r') + '|' + &
-                                  num2char(bnu, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
+                                  num2char(aksq, notation='s', width=13, precision=3, justify='r') + '|' +   &
+                                  num2char(kappa, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
 
                 ENDIF
               ENDIF
@@ -1393,16 +1666,18 @@ PROGRAM main
               ! arrange available processes into logic grid
               CALL build_comms()
 
+              ! keep track of any error occurred during envelope calculation and NA search
               errors = 0
 
-              IF (comm2 .ne. mpi_comm_null) THEN
-                CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+              IF (comm1 .ne. mpi_comm_null) THEN
+                CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
               ENDIF
 
               CALL mpi_bcast(errors, 1, mpi_int, 0, mpi_comm_world, ierr)
 
               IF (world_rank .eq. 0) CALL explain_error()
 
+              ! do stop only for important errors
               IF (errors .gt. 1) CALL mpi_abort(mpi_comm_world, ok, ierr)
 
               CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
@@ -1412,7 +1687,7 @@ PROGRAM main
                 CALL mpi_abort(mpi_comm_world, ok, ierr)
               ENDIF
 
-              IF (comm2 .ne. mpi_comm_null) THEN
+              IF (comm1 .ne. mpi_comm_null) THEN
                 ! write best-fitting model to disk
                 CALL bestfit(k, [recvr(l)%code(1)], inverted, bestmodel)
                 CALL destroy_comms()
@@ -1450,15 +1725,18 @@ PROGRAM main
                                   num2char(gss, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
 
                 ELSE
-                  gss = bestmodel(1)
-                  bnu = bestmodel(2)
+                  gss   = bestmodel(1)
+                  aksq  = bestmodel(2)
+                  kappa = bestmodel(3)
 
                   CALL update_log(num2char('Best model parameters', width=29, fill='.') +    &
                                   num2char('EtaSS', width=17, justify='r') + '|' +    &
-                                  num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
+                                  num2char('Nu', width=13, justify='r')    + '|' +    &
+                                  num2char('Hurst', width=13, justify='r') + '|', blankline = .false.)
 
                   CALL update_log(num2char('', width=29) + num2char(gss, notation='s', width=17, precision=3, justify='r') + '|' + &
-                                  num2char(bnu, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
+                                  num2char(aksq, notation='s', width=13, precision=3, justify='r') + '|' +   &
+                                  num2char(kappa, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
 
                 ENDIF
               ENDIF
@@ -1503,16 +1781,18 @@ PROGRAM main
           ! arrange available processes into logic grid
           CALL build_comms()
 
+          ! keep track of any error occurred during envelope calculation and NA search
           errors = 0
 
-          IF (comm2 .ne. mpi_comm_null) THEN
-            CALL na(comm2, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
+          IF (comm1 .ne. mpi_comm_null) THEN
+            CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
           ENDIF
 
           CALL mpi_bcast(errors, 1, mpi_int, 0, mpi_comm_world, ierr)
 
           IF (world_rank .eq. 0) CALL explain_error()
 
+          ! do stop only for important errors
           IF (errors .gt. 1) CALL mpi_abort(mpi_comm_world, ok, ierr)
 
           CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
@@ -1522,7 +1802,7 @@ PROGRAM main
             CALL mpi_abort(mpi_comm_world, ok, ierr)
           ENDIF
 
-          IF (comm2 .ne. mpi_comm_null) THEN
+          IF (comm1 .ne. mpi_comm_null) THEN
             ! write best-fitting model to disk and explored parameters space to disk
             CALL bestfit(k, code, [current], bestmodel)
             CALL destroy_comms()
@@ -1558,14 +1838,18 @@ PROGRAM main
                               num2char(gss, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
 
             ELSE
-              gss = bestmodel(1)
-              bnu = bestmodel(2)
+              gss   = bestmodel(1)
+              aksq  = bestmodel(2)
+              kappa = bestmodel(3)
 
-              CALL update_log(num2char('Best model parameters', width=29, fill='.') + num2char('EtaSS', width=17, justify='r') + &
-                              '|' + num2char('Nu', width=13, justify='r') + '|', blankline = .false.)
+              CALL update_log(num2char('Best model parameters', width=29, fill='.') +    &
+                              num2char('EtaSS', width=17, justify='r') + '|' +    &
+                              num2char('Nu', width=13, justify='r')    + '|' +    &
+                              num2char('Hurst', width=13, justify='r') + '|', blankline = .false.)
 
               CALL update_log(num2char('', width=29) + num2char(gss, notation='s', width=17, precision=3, justify='r') + '|' + &
-                              num2char(bnu, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
+                              num2char(aksq, notation='s', width=13, precision=3, justify='r') + '|' +   &
+                              num2char(kappa, notation='s', width=13, precision=3, justify='r') + '|', blankline = .false.)
 
             ENDIF
 
@@ -1905,11 +2189,11 @@ SUBROUTINE read_input_file(ok)
 
   ELSE
 
-    ! assign some values to "acf" and "hurst" for acoustic isotropic RTT
+    ! assign some values to "acf" and "hurst" for acoustic isotropic RTT. Note: in such case, these are irrelevant
     IF (ALL(nu .eq. 0._r32)) THEN
 
       acf   = 'vk'
-      hurst = 0.5_r32
+      hurst = [0.5_r32, 0.5_r32]
 
     ELSE
 
@@ -1923,14 +2207,17 @@ SUBROUTINE read_input_file(ok)
       ENDIF
 
       IF (acf .eq. 'vk') THEN
-        CALL parse(ok, hurst, lu, 'Hurst', ['=', ','], com = '#')                          !< hurst
+        CALL parse(ok, hurst, lu, 'Hurst', ['{', '}'], ',', com = '#')                     !< hurst
         IF (ok .ne. 0) CALL report_error(parser_error(ok))
 
-        IF (is_empty(hurst)) THEN
+        IF (ALL(is_empty(hurst))) THEN
           CALL report_error('Argument "hurst" not found')
           ok = 1
           RETURN
         ENDIF
+      ELSE
+        ! for Gaussian media, set Hurst exponent to any value to avoid triggering errors
+        hurst = [0.5_r32, 0.5_r32]
       ENDIF
 
     ENDIF
@@ -2057,7 +2344,7 @@ SUBROUTINE read_input_file(ok)
       ok = 1
       RETURN
     ENDIF
-    IF (wrong_par([hurst], 0._r32, 1._r32, .true.)) THEN
+    IF (wrong_par(hurst, 0._r32, 1._r32, .true.)) THEN
       CALL report_error('Hurst exponent must be in the interval (0, 1)')
       ok = 1
       RETURN
@@ -2266,13 +2553,13 @@ SUBROUTINE coords2index(npts, dims, coords, fs, fe)
 
   USE, NON_INTRINSIC :: m_precisions
 
-  INTEGER(i32), DIMENSION(2), INTENT(IN)  :: npts, dims, coords
-  INTEGER(i32), DIMENSION(2), INTENT(OUT) :: fs, fe
+  INTEGER(i32), DIMENSION(3), INTENT(IN)  :: npts, dims, coords
+  INTEGER(i32), DIMENSION(3), INTENT(OUT) :: fs, fe
   INTEGER(i32)                            :: i
 
   !---------------------------------------------------------------------------------------------------------------------------------
 
-  DO i = 1, 2
+  DO i = 1, 3
     fs(i) = 1 + INT( REAL(npts(i)) / REAL(dims(i)) * REAL(coords(i)) )
     fe(i) = INT( REAL(npts(i)) / REAL(dims(i)) * REAL(coords(i) + 1) )
   ENDDO

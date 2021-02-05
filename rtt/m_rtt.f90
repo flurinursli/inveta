@@ -24,6 +24,7 @@ MODULE m_rtt
   USE, NON_INTRINSIC :: m_fft_real
   USE, NON_INTRINSIC :: m_interpolation_r64
   USE, NON_INTRINSIC :: m_llsq_r64
+  USE                :: omp_lib
 #ifdef MPI
   USE, NON_INTRINSIC :: mpi
 #endif
@@ -533,7 +534,7 @@ MODULE m_rtt
         psi(i) = (i - 1) * rad
       ENDDO
 
-      ! define scattering pattern based on the selected scattering pattern FUNCTION
+      ! define scattering pattern based on the selected scattering pattern function
       IF (acf .eq. 'vk') THEN
 
         ! define angle-independent coefficient
@@ -557,7 +558,7 @@ MODULE m_rtt
           coefficient = 1._r64
         ENDIF
 
-        ! compute scattering pattern FUNCTION
+        ! compute scattering pattern function
         DO i = 1, npsi
           pattern(i) = coefficient * exp(-nu * SIN(psi(i) / 2._r64)**2)
         ENDDO

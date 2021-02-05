@@ -9,8 +9,10 @@
 !   11/01/21                  added multiple communicators
 !
 
-weight(:) = 0._r32
-delta(:) = 0._r32
+DO i = 1, SIZE(delta)
+  weight(i) = 0._r32
+  delta(i)  = 0._r32
+ENDDO
 
 CALL mpi_comm_rank(comm2, rank, ierr)
 
@@ -37,9 +39,9 @@ DO j = j0, j1
 
   ! solve forward problem
   IF (elastic) THEN
-    CALL rtt(comm1, pprank1, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
+    CALL rtt(comm3, pprank3, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
   ELSE
-    CALL rtt(comm1, pprank1, time, tsobs(j) + tau, gss, gi, beta, acf, hurst, bnu, tau, envelope, ok)
+    CALL rtt(comm3, pprank3, time, tsobs(j) + tau, gss, gi, beta, acf, kappa, aksq, tau, envelope, ok)
   ENDIF
 
   IF (ok .ne. 0) errors = ok
@@ -63,7 +65,7 @@ DO j = j0, j1
       IF (elastic) THEN
         error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gpp, gps, gsp, gss]
       ELSE
-        error_params = [time(n), time(2)-time(1), tsobs(j), gss, bnu, 0._r32, 0._r32, 0._r32]
+        error_params = [time(n), time(2)-time(1), tsobs(j), gss, aksq, kappa, 0._r32, 0._r32]
       ENDIF
       CYCLE
     ENDIF
@@ -81,7 +83,7 @@ DO j = j0, j1
       IF (elastic) THEN
         error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gpp, gps, gsp, gss]
       ELSE
-        error_params = [time(n), time(2)-time(1), tsobs(j), gss, bnu, 0._r32, 0._r32, 0._r32]
+        error_params = [time(n), time(2)-time(1), tsobs(j), gss, aksq, kappa, 0._r32, 0._r32]
       ENDIF
       CYCLE
     ENDIF
@@ -106,7 +108,7 @@ DO j = j0, j1
     IF (elastic) THEN
       error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gpp, gps, gsp, gss]
     ELSE
-      error_params = [time(n), time(2)-time(1), tsobs(j), gss, bnu, 0._r32, 0._r32, 0._r32]
+      error_params = [time(n), time(2)-time(1), tsobs(j), gss, aksq, kappa, 0._r32, 0._r32]
     ENDIF
     CYCLE
   ENDIF
