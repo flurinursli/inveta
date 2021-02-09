@@ -1,5 +1,9 @@
 function [] = space_search(fname);
 
+% show the explored parameters space and misfit at every iteration.
+% e.g.: fdisplay('nasearch_2-4_MTI03.txt');
+
+
 par = load(fname);
 
 figure;

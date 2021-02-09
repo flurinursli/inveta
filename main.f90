@@ -55,7 +55,7 @@ MODULE m_inveta
 
   TYPE :: info
     CHARACTER(200)                           :: folder
-    CHARACTER(10), ALLOCATABLE, DIMENSION(:) :: code
+    CHARACTER(10), ALLOCATABLE, DIMENSION(:) :: code, network, channel
     CHARACTER(30), ALLOCATABLE, DIMENSION(:) :: event
     REAL(r32),     ALLOCATABLE, DIMENSION(:) :: tp, ts
   END TYPE info
@@ -73,7 +73,8 @@ MODULE m_inveta
     SUBROUTINE write_search(f, code, inverted, mpar, fit)
 
       ! Purpose:
-      !   to write to disk the parameters space explored by NA, including average misfit values.
+      !   to write to disk the "mpar" parameters space explored by NA for the "f"-th frequency band, including misfit values "fit"
+      !   averaged over the number of observations.
       !
       ! Revisions:
       !     Date                    Description of change
@@ -1374,21 +1375,22 @@ PROGRAM main
           IF (ALLOCATED(timeseries)) DEALLOCATE(timeseries, time)
 
           IF (world_rank .eq. 0) THEN
-            ! this is a hack to deal with irregular file naming convention
-            DO i = 1, 4
-              fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_CH_' + TRIM(recvr(l)%code(p)) + '_HH[ENZ]_' +  &
-                   num2char(i) + '.mseed.ascii'
-              CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
-              IF (ok .eq. 0) EXIT
-              fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_CH_' + TRIM(recvr(l)%code(p)) + '_HG[ENZ]_' +  &
-                   num2char(i) + '.mseed.ascii'
-              CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
-              IF (ok .eq. 0) EXIT
-              fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_CH_' + TRIM(recvr(l)%code(p)) + '_EH[ENZ]_' +  &
-                   num2char(i) + '.mseed.ascii'
-              CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
-              IF (ok .eq. 0) EXIT
-            ENDDO
+
+            fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_' + TRIM(recvr(l)%network(p)) + '_' +   &
+                 TRIM(recvr(l)%code(l)) + '_' + TRIM(recvr(l)%channel(p)) + '[ENZ].mseed.ascii'
+
+            CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
+
+            ! this is a hack to deal with fancy SED file naming convention
+            IF (ok .ne. 0) THEN
+              DO i = 1, 4
+                fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_' + TRIM(recvr(l)%network(p)) + '_' +   &
+                     TRIM(recvr(l)%code(l)) + '_' + TRIM(recvr(l)%channel(p)) + '[ENZ]_' + num2char(i) + '.mseed.ascii'
+                CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
+                IF (ok .eq. 0) EXIT
+              ENDDO
+            ENDIF
+
           ENDIF
 
           CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
@@ -2369,7 +2371,7 @@ SUBROUTINE read_event_file(fo, i, ok)
   !   have the following format:
   !
   !   Line 1        -> header (skipped)
-  !   Line 2 to EOF -> event ID, station ID, direct P-wave arrival time, direct S-wave arrival time
+  !   Line 2 to EOF -> event ID, station ID, network ID, channel, direct P-wave arrival time, direct S-wave arrival time
   !
   !   Values are stored in global (module) variables. On exit, "ok" is not equal to zero if an error occurred.
   !
@@ -2392,7 +2394,7 @@ SUBROUTINE read_event_file(fo, i, ok)
   CHARACTER(10)                                        :: label
   CHARACTER(30)                                        :: id
   CHARACTER(200)                                       :: buffer
-  CHARACTER(10), ALLOCATABLE, DIMENSION(:)             :: code
+  CHARACTER(10), ALLOCATABLE, DIMENSION(:)             :: code, network, channel
   CHARACTER(30), ALLOCATABLE, DIMENSION(:)             :: event
   INTEGER(i32)                                         :: lu, l
   REAL(r32)                                            :: p, s, lat, long, z, alpha
@@ -2430,19 +2432,43 @@ SUBROUTINE read_event_file(fo, i, ok)
          split(split(id, ' ', 2), ':', 1) + split(split(id, ' ', 2), ':', 2) + split(split(id, ' ', 2), ':', 3)
     id = split(id, '.', 1)
 
-    label = split(buffer, ACHAR(9), 2)
-
-    CALL char2num(split(buffer, ACHAR(9), 3), p)
-    CALL char2num(split(buffer, ACHAR(9), 4), s)
-
     IF (ALLOCATED(tp)) THEN
       event = [event, id]
-      code  = [code, label]
+    ELSE
+      event = [id]
+    ENDIF
+
+    label = split(buffer, ACHAR(9), 2)
+
+    IF (ALLOCATED(tp)) THEN
+      code = [code, label]
+    ELSE
+      code = [label]
+    ENDIF
+
+    label = split(buffer, ACHAR(9), 3)
+
+    IF (ALLOCATED(tp)) THEN
+      network = [network, label]
+    ELSE
+      network = [label]
+    ENDIF
+
+    label = split(buffer, ACHAR(9), 4)
+
+    IF (ALLOCATED(tp)) THEN
+      channel = [channel, label]
+    ELSE
+      channel = [label]
+    ENDIF
+
+    CALL char2num(split(buffer, ACHAR(9), 5), p)
+    CALL char2num(split(buffer, ACHAR(9), 6), s)
+
+    IF (ALLOCATED(tp)) THEN
       tp = [tp, p]
       ts = [ts, s]
     ELSE
-      event = [id]
-      code  = [label]
       tp = [p]
       ts = [s]
     ENDIF
@@ -2459,10 +2485,12 @@ SUBROUTINE read_event_file(fo, i, ok)
   ! ALLOCATE(recvr(i)%code,  source = code)
   ! ALLOCATE(recvr(i)%tp, source = tp)
   ! ALLOCATE(recvr(i)%ts, source = ts)
-  recvr(i)%event = event
-  recvr(i)%code  = code
-  recvr(i)%tp    = tp
-  recvr(i)%ts    = ts
+  recvr(i)%event   = event
+  recvr(i)%code    = code
+  recvr(i)%network = network
+  recvr(i)%channel = channel
+  recvr(i)%tp      = tp
+  recvr(i)%ts      = ts
 
   CLOSE(lu, iostat = ok)
 
