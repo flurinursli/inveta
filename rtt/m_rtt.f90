@@ -141,7 +141,7 @@ MODULE m_rtt
       rank = rank + 1
 #endif
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_start(tictoc(1), comm)
 #else
@@ -186,7 +186,7 @@ MODULE m_rtt
       ! angular frequency resolution
       dw = 2.0 * pi / nfft / dt
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_start(tictoc(2), comm)
 #else
@@ -197,7 +197,7 @@ MODULE m_rtt
       ! return expansion coefficients of scattering function ("lmax", "coef")
       CALL scattering_pattern(acf, REAL(hurst, r64), REAL(nu, r64), ok)
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_stop(tictoc(2), comm)
 #else
@@ -217,7 +217,7 @@ MODULE m_rtt
 
       ALLOCATE(wigner(nwigner))
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_start(tictoc(3), comm)
 #else
@@ -228,7 +228,7 @@ MODULE m_rtt
       ! pre-compute wigner 3j symbol values
       CALL fill_wigner()
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_stop(tictoc(3), comm)
 #else
@@ -238,7 +238,7 @@ MODULE m_rtt
 
       ALLOCATE(gammal(2*lmax - 1))
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_start(tictoc(4), comm)
 #else
@@ -251,7 +251,7 @@ MODULE m_rtt
         gammal(i - 1) = SQRT(pi) * GAMMA(i + 1._r64) / GAMMA(i + 1.5_r64)
       ENDDO
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_stop(tictoc(4), comm)
 #else
@@ -277,7 +277,7 @@ MODULE m_rtt
       i1 = i0 + pprank(rank) - 1
 #endif
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_start(tictoc(5), comm)
 #else
@@ -309,7 +309,7 @@ MODULE m_rtt
       ENDDO
       !$omp end parallel do
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_stop(tictoc(5), comm)
 #else
@@ -320,12 +320,14 @@ MODULE m_rtt
 #ifdef MPI
       ! exchange data inside communicator
       CALL mpi_allgatherv(mpi_in_place, 0, mpi_datatype_null, spectrum, pprank, displs, mpi_double_complex, comm, ierr)
+#ifdef ERROR_TRAP
       CALL mpi_allreduce(mpi_in_place, ok, 1, mpi_int, mpi_max, comm, ierr)
+#endif
 #endif
 
       DEALLOCATE(gammal, wigner)
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_start(tictoc(6), comm)
 #else
@@ -352,7 +354,7 @@ MODULE m_rtt
 
       CALL interpolate(e_time, e_multi, dtime, em)
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_stop(tictoc(6), comm)
 #else
@@ -362,8 +364,6 @@ MODULE m_rtt
 
       ! now "dt" is the final time-step
       dt = time(2) - time(1)
-
-      em(1:NINT(ts / dt)) = 0._r64
 
       ! ============================================================================================================================
       ! -------------------------------------------------- DIRECT WAVE TERM --------------------------------------------------------
@@ -459,14 +459,15 @@ MODULE m_rtt
 
       DEALLOCATE(coef)
 
-#ifdef DEBUG
-
+#ifdef PERF
 #ifdef MPI
       CALL watch_stop(tictoc(1), comm)
 #else
       CALL watch_stop(tictoc(1))
 #endif
+#endif
 
+#ifdef DEBUG
       OPEN(newunit = lu, file = 'rtt_nonisotropic.txt', status = 'unknown', form = 'formatted', access = 'sequential', &
            action = 'write', iostat = ok)
       ! WRITE(lu, *) ' Time    Direct wave   Single order   Higher order    Total'
@@ -474,12 +475,13 @@ MODULE m_rtt
         WRITE(lu, '(5(G0, 3X))') time(i), e0(i), em(i), envelope(i)
       ENDDO
       CLOSE(lu)
+#endif
 
+#ifdef PERF
       WRITE(stdout, '(A)') '                     Total  |   Expansion   |    Wigner3j   |     Gamma     |  Integration  |' //  &
                                                         '   FFT/interp  |'
       WRITE(stdout, '(A,6(ES14.3,A))') 'Elapsed time:', tictoc(1), ' |', tictoc(2), ' |', tictoc(3), ' |', tictoc(4), ' |',   &
                                                         tictoc(5), ' |', tictoc(6), ' |'
-
 #endif
 
     END SUBROUTINE rtt_nonisotropic
@@ -1155,7 +1157,7 @@ MODULE m_rtt
       rank = rank + 1
 #endif
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_start(tictoc(1), comm)
 #else
@@ -1226,7 +1228,7 @@ MODULE m_rtt
       i1 = i0 + pprank(rank) - 1
 #endif
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_start(tictoc(2), comm)
 #else
@@ -1258,7 +1260,7 @@ MODULE m_rtt
       ENDDO
       !$omp end parallel do
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_stop(tictoc(2), comm)
 #else
@@ -1269,10 +1271,12 @@ MODULE m_rtt
 #ifdef MPI
       ! exchange data inside communicator
       CALL mpi_allgatherv(mpi_in_place, 0, mpi_datatype_null, spectrum, pprank, displs, mpi_double_complex, comm, ierr)
+#ifdef ERROR_TRAP
       CALL mpi_allreduce(mpi_in_place, ok, 1, mpi_int, mpi_max, comm, ierr)
 #endif
+#endif
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_start(tictoc(3), comm)
 #else
@@ -1299,7 +1303,7 @@ MODULE m_rtt
 
       CALL interpolate(e_time, e_multi, dtime, em)
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_stop(tictoc(3), comm)
 #else
@@ -1433,7 +1437,7 @@ MODULE m_rtt
         envelope(i) = (e0(i) + em(i)) * EXP(-b * time(i))
       ENDDO
 
-#ifdef DEBUG
+#ifdef PERF
 #ifdef MPI
       CALL watch_stop(tictoc(1), comm)
 #else
@@ -1442,7 +1446,6 @@ MODULE m_rtt
 #endif
 
 #ifdef DEBUG
-
       OPEN(newunit = lu, file = 'rtt_isotropic.txt', status = 'unknown', form = 'formatted', access = 'sequential', &
            action = 'write', iostat = ok)
       ! WRITE(lu, *) ' Time    Direct wave   Single order   Higher order    Total'
@@ -1450,10 +1453,11 @@ MODULE m_rtt
         WRITE(lu, '(5(G0, 3X))') time(i), e0(i), em(i), envelope(i)
       ENDDO
       CLOSE(lu)
+#endif
 
+#ifdef PERF
       WRITE(stdout, '(A)') '                     Total  |  Integration  |   FFT/interp  |'
       WRITE(stdout, '(A,3(ES14.3,A))') 'Elapsed time:', tictoc(1), ' |', tictoc(2), ' |', tictoc(3), ' |'
-
 #endif
 
     END SUBROUTINE rtt_isotropic

@@ -1,5 +1,11 @@
 include ../Makefile.inc
 
+PP_FLAGS =
+
+ifeq ($(MKL),y)
+	PP_FLAGS += -DMKL
+endif
+
 R32_OBJ = lib32/m_llsq.o
 R64_OBJ = lib64/m_llsq.o
 
@@ -9,10 +15,10 @@ LIB32 = libllsqf.a
 llsq: dirs $(LIB64) $(LIB32)
 
 $(R64_OBJ) : lib64/%.o : %.f90
-	$(FC) $(OPT) -cpp $(MKL) -DDOUBLE_PREC -I../common/include -c -o $@ $<
+	$(FC) $(OPT) -cpp $(PP_FLAGS) -DDOUBLE_PREC -I../common/include -c -o $@ $<
 
 $(R32_OBJ) : lib32/%.o : %.f90
-	$(FC) $(OPT) -cpp $(MKL) -I../common/include -c -o $@ $<
+	$(FC) $(OPT) -cpp $(PP_FLAGS) -I../common/include -c -o $@ $<
 
 $(LIB64) : $(R64_OBJ)
 	ar qc $@ $(R64_OBJ)

@@ -45,7 +45,7 @@ MODULE m_inveta
   REAL(r32)                                 :: fwin
   REAL(r32)                                 :: tlim
   REAL(r32)                                 :: pdwindow, sdwindow, pcwindow, scwindow     !< windows for direct and coda P-/S-waves
-  REAL(r32),                 DIMENSION(8)   :: error_params
+  REAL(r32),                 DIMENSION(7)   :: error_params
   REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: etass, etass2pp, etaps2pp                  !< scattering parameters
   REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: nu, hurst
   REAL(r32),    ALLOCATABLE, DIMENSION(:)   :: tobs, envobs, tpobs, tsobs                 !< observables used during inversion
@@ -169,7 +169,7 @@ MODULE m_inveta
 
       gi = 0._r32
 
-#ifdef DEBUG
+#ifdef PERF
       CALL watch_start(tictoc(1), comm2)
 #endif
 
@@ -235,7 +235,7 @@ MODULE m_inveta
 
       ENDIF
 
-#ifdef DEBUG
+#ifdef PERF
       CALL watch_stop(tictoc(1), comm2)
       CALL watch_start(tictoc(2), comm2)
 #endif
@@ -297,7 +297,7 @@ MODULE m_inveta
 
       ENDDO
 
-#ifdef DEBUG
+#ifdef PERF
       CALL watch_stop(tictoc(2), comm2)
       CALL mpi_allreduce(mpi_in_place, tictoc, 2, mpi_double, mpi_max, comm2, ierr)
 
@@ -345,8 +345,10 @@ MODULE m_inveta
 
       misfit = 0._r32
 
+#ifdef ERROR_TRAP
       ! return immediately if an important error was raised
       IF (errors .gt. 1) RETURN
+#endif
 
       IF (elastic) THEN
         gss = mpar(1)
@@ -359,13 +361,13 @@ MODULE m_inveta
         kappa = mpar(3)          !< hurst
       ENDIF
 
-#ifdef DEBUG
+#ifdef PERF
       CALL watch_start(tictoc(1), comm2)
 #endif
 
 #include "linsys_incl.f90"
 
-#ifdef DEBUG
+#ifdef PERF
       CALL watch_stop(tictoc(1), comm2)
       CALL mpi_allreduce(mpi_in_place, tictoc, 2, mpi_double, mpi_max, comm2, ierr)
 
@@ -393,7 +395,9 @@ MODULE m_inveta
         ENDDO
       ENDDO
 
-      CALL mpi_allreduce(mpi_in_place, errors, 1, mpi_int, mpi_max, comm2, ierr)
+#ifdef ERROR_TRAP
+      CALL share_error(comm2)
+#endif
 
     END FUNCTION misfit
 
@@ -1049,9 +1053,8 @@ MODULE m_inveta
         IF (elastic) THEN
           CALL update_log(num2char('Triggered for', width=29, fill='.') + num2char('Max Time', width=10, justify='r') + '|' +  &
                           num2char('DT', width=10, justify='r') + '|' +  num2char('Tp', width=10, justify='r') + '|' +  &
-                          num2char('Ts', width=10, justify='r') + '|' +  num2char('EtaPP', width=10, justify='r') + '|' +  &
-                          num2char('EtaPS', width=10, justify='r') + '|' + num2char('EtaSP', width=10, justify='r') + '|' +  &
-                          num2char('EtaSS', width=10, justify='r') + '|')
+                          num2char('Ts', width=10, justify='r') + '|' +  num2char('EtaSS', width=10, justify='r') + '|' +  &
+                          num2char('EtaSS/PP', width=10, justify='r') + '|' + num2char('EtaPS/PP', width=10, justify='r') + '|' )
 
           CALL update_log(num2char('', width=29, fill='.') +     &
                           num2char(error_params(1), notation='f', width=10, precision=2, justify='r') + '|' +  &
@@ -1060,19 +1063,20 @@ MODULE m_inveta
                           num2char(error_params(4), notation='f', width=10, precision=4, justify='r') + '|' +  &
                           num2char(error_params(5), notation='f', width=10, precision=4, justify='r') + '|' +  &
                           num2char(error_params(6), notation='f', width=10, precision=4, justify='r') + '|' +  &
-                          num2char(error_params(7), notation='f', width=10, precision=4, justify='r') + '|' +  &
-                          num2char(error_params(8), notation='f', width=10, precision=4, justify='r') + '|', blankline = .false.)
+                          num2char(error_params(7), notation='f', width=10, precision=4, justify='r') + '|', blankline = .false.)
         ELSE
           CALL update_log(num2char('Triggered for', width=29, fill='.') + num2char('Max Time', width=10, justify='r') + '|' +  &
                           num2char('DT', width=10, justify='r') + '|' +  num2char('Ts', width=10, justify='r') + '|' +  &
-                          num2char('EtaSS', width=10, justify='r') + '|' + num2char('Nu', width=10, justify='r') + '|')
+                          num2char('EtaSS', width=10, justify='r') + '|' + num2char('Nu', width=10, justify='r') + '|' + &
+                          num2char('Hurst', width=10, justify='r') + '|')
 
           CALL update_log(num2char('', width=29, fill='.') +   &
                           num2char(error_params(1), notation='f', width=10, precision=2, justify='r') + '|' +  &
                           num2char(error_params(2), notation='f', width=10, precision=4, justify='r') + '|' +  &
                           num2char(error_params(3), notation='f', width=10, precision=4, justify='r') + '|' +  &
                           num2char(error_params(4), notation='f', width=10, precision=4, justify='r') + '|' +  &
-                          num2char(error_params(5), notation='f', width=10, precision=4, justify='r'), blankline = .false.)
+                          num2char(error_params(5), notation='f', width=10, precision=4, justify='r') + '|' +  &
+                          num2char(error_params(6), notation='f', width=10, precision=4, justify='r') + '|' , blankline = .false.)
         ENDIF
       ELSEIF (errors .gt. 10) THEN
         CALL update_log('Linear regression failed with code ' + num2char(errors - 10))
@@ -1083,6 +1087,50 @@ MODULE m_inveta
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
     !===================================================================================================================================
     ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * ---
+
+    SUBROUTINE share_error(comm)
+
+      ! Purpose:
+      !   To share error code and parameters that triggered the error among members of "comm".
+      !
+      ! Revisions:
+      !     Date                    Description of change
+      !     ====                    =====================
+      !   11/01/21                  original version
+      !
+
+      INTEGER(i32),                           INTENT(IN) :: comm
+      INTEGER(i32)                                       :: rank, ntasks, ierr
+      INTEGER(i32), ALLOCATABLE, DIMENSION(:)            :: list
+
+      !-----------------------------------------------------------------------------------------------------------------------------
+
+      CALL mpi_comm_size(comm, ntasks, ierr)
+      CALL mpi_comm_rank(comm, rank, ierr)
+
+      ALLOCATE(list(0:ntasks - 1))
+
+      list(rank) = errors
+
+      ! exchange error codes inside "comm"
+      CALL mpi_allgather(mpi_in_place, 0, mpi_datatype_null, list, 1, mpi_int, comm, ierr)
+
+      ! all members of "comm" receive parameters that triggered error
+      IF (ANY(list .eq. 4)) THEN
+        rank   = MINLOC(ABS(list - 4), DIM=1) - 1
+        errors = 4
+        CALL mpi_bcast(error_params, 7, mpi_real, rank, comm, ierr)
+      ELSE
+        errors = MAXVAL(list)
+      ENDIF
+
+      DEALLOCATE(list)
+
+    END SUBROUTINE share_error
+
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
+    !===============================================================================================================================
+    ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- *
 
 END MODULE m_inveta
 
@@ -1131,6 +1179,7 @@ PROGRAM main
   COMPLEX(r32),  ALLOCATABLE, DIMENSION(:)   :: analytic, spectrum
   INTEGER(i32)                               :: ierr, ok, lu, n, i, j, k, p, l, is, ie, pts, rank
   INTEGER(i32),               DIMENSION(2)   :: v
+  INTEGER(i32),  ALLOCATABLE, DIMENSION(:)   :: lrank
   REAL(r32)                                  :: dt, t, gss, gpp, gsp, gps, aksq, kappa
   REAL(r64),                  DIMENSION(2)   :: tictoc
   REAL(r32),     ALLOCATABLE, DIMENSION(:)   :: time, trespl, h, envlp, respl, bestmodel, lrange, hrange, sampled, fit
@@ -1562,6 +1611,10 @@ PROGRAM main
                 CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
               ENDIF
 
+#ifdef ERROR_TRAP
+              IF (comm1 .ne. mpi_comm_null) CALL share_error(comm1)
+
+              ! broadcast error code to tasks left outside cpus grid
               CALL mpi_bcast(errors, 1, mpi_int, 0, mpi_comm_world, ierr)
 
               IF (world_rank .eq. 0) CALL explain_error()
@@ -1574,6 +1627,7 @@ PROGRAM main
                 IF (world_rank .eq. 0) CALL report_error('NA exited with error code: ' + num2char(ok))
                 CALL mpi_abort(mpi_comm_world, ok, ierr)
               ENDIF
+#endif
 
               IF (comm1 .ne. mpi_comm_null) THEN
                 CALL bestfit(k, [recvr(l)%code(1)], [current], bestmodel)
@@ -1675,6 +1729,10 @@ PROGRAM main
                 CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
               ENDIF
 
+#ifdef ERROR_TRAP
+              IF (comm1 .ne. mpi_comm_null) CALL share_error(comm1)
+
+              ! broadcast error code to tasks left outside cpus grid
               CALL mpi_bcast(errors, 1, mpi_int, 0, mpi_comm_world, ierr)
 
               IF (world_rank .eq. 0) CALL explain_error()
@@ -1688,6 +1746,7 @@ PROGRAM main
                 IF (world_rank .eq. 0) CALL report_error('NA exited with error code: ' + num2char(ok))
                 CALL mpi_abort(mpi_comm_world, ok, ierr)
               ENDIF
+#endif
 
               IF (comm1 .ne. mpi_comm_null) THEN
                 ! write best-fitting model to disk
@@ -1790,6 +1849,10 @@ PROGRAM main
             CALL na(comm1, misfit, lrange, hrange, seed, itermax, nsi, ns, nr, 0, bestmodel, sampled, fit, ok)
           ENDIF
 
+#ifdef ERROR_TRAP
+          IF (comm1 .ne. mpi_comm_null) CALL share_error(comm1)
+
+          ! broadcast error code to tasks left outside cpus grid
           CALL mpi_bcast(errors, 1, mpi_int, 0, mpi_comm_world, ierr)
 
           IF (world_rank .eq. 0) CALL explain_error()
@@ -1803,6 +1866,7 @@ PROGRAM main
             IF (world_rank .eq. 0) CALL report_error('NA exited with error code: ' + num2char(ok))
             CALL mpi_abort(mpi_comm_world, ok, ierr)
           ENDIF
+#endif
 
           IF (comm1 .ne. mpi_comm_null) THEN
             ! write best-fitting model to disk and explored parameters space to disk

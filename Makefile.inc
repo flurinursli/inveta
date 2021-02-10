@@ -1,8 +1,8 @@
 FC = mpif90
 
 # optimization flags for GCC (add "-march=native" if compute node eqv. compile node)
-OPT = -g -std=f2008 -fcheck=all -fbacktrace
-#OPT = -O3 -std=f2008 -march=native
+#OPT = -g -std=f2008 -fcheck=all -fbacktrace
+OPT = -O3 -std=f2008 -march=native
 
 # optimization flags for INTEL (add "-xHost" if compute node eqv. compile node)
 #OPT = -O3 -xHost
@@ -19,9 +19,12 @@ INCL_FFTW = $(FFTW_PATH)/include
 #INCL_FFTW = /usr/include
 
 # libraries optimized for INTEL compiler
-#MKL = -DMKL
+#MKL = y
 #INCL_FFTW = /opt/intel/mkl/include/fftw
 #LINK_FLAGS = -lifcore -mkl
 
 # Flag for debugging (leave empty for production runs)
-DEBUG = -DDEBUG
+ERROR_TRAP = y
+
+# Flag for perfomance analysis
+PERF = y

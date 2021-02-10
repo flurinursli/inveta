@@ -1,0 +1,24 @@
+# 0=acoustic, 1=elastic
+0
+# shear wave velocity (km/s)
+3.5
+# gs = Gaussian acf, vk = Von Karman acf
+vk
+# maximum time
+120.
+# time-step
+0.01
+# P-wave arrival time (skipped for acoustic case)
+3.0
+# S-wave arrival time
+30.0
+# EtaSS
+0.005
+# EtaSS2PP (skipped for acoustic case)
+3
+# EtaPS2PP (skipped for acoustic case)
+8
+# Nu (skipped for elastic case)
+6
+# Hurst (skipped for elastic case or Gaussian acf)
+0.05

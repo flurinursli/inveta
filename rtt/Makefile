@@ -1,5 +1,15 @@
 include ../Makefile.inc
 
+PP_FLAGS = -DMPI
+
+ifeq ($(ERROR_TRAP),y)
+	PP_FLAGS += -DERROR_TRAP
+endif
+
+ifeq ($(PERF),y)
+	PP_FLAGS += -DPERF
+endif
+
 F90_OBJ = hyp_2F1.o quadpack.o m_rtt.o
 
 LIB_NAME = librtt.a
@@ -7,7 +17,7 @@ LIB_NAME = librtt.a
 rtt: dirs $(LIB_NAME)
 
 $(F90_OBJ) : %.o : %.f90
-	$(FC) $(OPT) $(OMP) -cpp -DMPI -I../common/include -I../llsq/include64 -I../interpolation/include64 -I../fft/include -c -o $@ $<
+	$(FC) $(OPT) $(OMP) -cpp $(PP_FLAGS) -I../common/include -I../llsq/include64 -I../interpolation/include64 -I../fft/include -c -o $@ $<
 
 $(LIB_NAME) : $(F90_OBJ)
 	ar qc $@ $(F90_OBJ)

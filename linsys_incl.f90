@@ -44,9 +44,11 @@ DO j = j0, j1
     CALL rtt(comm3, pprank3, time, tsobs(j) + tau, gss, gi, beta, acf, kappa, aksq, tau, envelope, ok)
   ENDIF
 
+#ifdef ERROR_TRAP
   IF (ok .ne. 0) errors = ok
 
   IF (errors .gt. 1) CYCLE
+#endif
 
   k = l - nobs(j)                                        !< index of previous last point used for inversion
   p = SUM(iobs(1:j)) - iobs(j)                           !< index of last point for previous envelope
@@ -57,36 +59,40 @@ DO j = j0, j1
     is = MAX(1, is)                                                                     !< make sure we don't go below 1
     ie = is + NINT(fwin*pdwindow / drespl)                                              !< end direct P-window
 
+#ifdef ERROR_TRAP
     DO i = is, ie
       IF (envelope(i) .lt. 0._r32) errors = 4
     ENDDO
 
     IF (errors .gt. 1) THEN
       IF (elastic) THEN
-        error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gpp, gps, gsp, gss]
+        error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gss, gss/gpp, gps/gpp]
       ELSE
-        error_params = [time(n), time(2)-time(1), tsobs(j), gss, aksq, kappa, 0._r32, 0._r32]
+        error_params = [time(n), time(2)-time(1), tsobs(j), gss, aksq, kappa, 0._r32]
       ENDIF
       CYCLE
     ENDIF
+#endif
 
     k        = k + 1
     delta(k) = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
 
     is = NINT((tsobs(j) - sdwindow * (1._r32 - fwin)) / drespl) + 1                     !< beginning direct S-window
 
+#ifdef ERROR_TRAP
     DO i = ie + 1, is - 1
       IF (envelope(i) .lt. 0._r32) errors = 4
     ENDDO
 
     IF (errors .gt. 1) THEN
       IF (elastic) THEN
-        error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gpp, gps, gsp, gss]
+        error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gss, gss/gpp, gps/gpp]
       ELSE
-        error_params = [time(n), time(2)-time(1), tsobs(j), gss, aksq, kappa, 0._r32, 0._r32]
+        error_params = [time(n), time(2)-time(1), tsobs(j), gss, aksq, kappa, 0._r32]
       ENDIF
       CYCLE
     ENDIF
+#endif
 
     ! add points from just after direct P-window to just before direct S-window (e.g. P-coda)
     DO i = ie + 1, is - 1
@@ -100,18 +106,20 @@ DO j = j0, j1
   is = MAX(1, is)                                                                      !< make sure we don't go below 1
   ie = is + NINT(fwin*sdwindow / drespl)                                               !< end direct S-window
 
+#ifdef ERROR_TRAP
   DO i = is, n
     IF (envelope(i) .lt. 0._r32) errors = 4
   ENDDO
 
   IF (errors .gt. 1) THEN
     IF (elastic) THEN
-      error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gpp, gps, gsp, gss]
+      error_params = [time(n), time(2)-time(1), tpobs(j), tsobs(j), gss, gss/gpp, gps/gpp]
     ELSE
-      error_params = [time(n), time(2)-time(1), tsobs(j), gss, aksq, kappa, 0._r32, 0._r32]
+      error_params = [time(n), time(2)-time(1), tsobs(j), gss, aksq, kappa, 0._r32]
     ENDIF
     CYCLE
   ENDIF
+#endif
 
   k        = k + 1
   delta(k) = LOG(mean(envobs(is + p:ie + p))) - LOG(mean(envelope(is:ie)))
@@ -228,13 +236,13 @@ DO i = 1, SUM(nobs)
   a(i, j) = -tobs(i) * weight(i)
 ENDDO
 
-#ifdef DEBUG
+#ifdef PERF
 CALL watch_start(tictoc(2), mpi_comm_self)
 #endif
 
 CALL mpi_wait(req, mpi_status_ignore, ierr)
 
-#ifdef DEBUG
+#ifdef PERF
 CALL watch_stop(tictoc(2), mpi_comm_self)
 #endif
 
