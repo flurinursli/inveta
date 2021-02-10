@@ -1,11 +1,11 @@
 FC = mpif90
 
 # optimization flags for GCC (add "-march=native" if compute node eqv. compile node)
-#OPT = -g -std=f2008 -fcheck=all -fbacktrace
-OPT = -O3 -std=f2008 -march=native
+OPT = -g -std=f2008 -fcheck=all -fbacktrace
+#OPT = -O3 -std=f2008 -march=native
 
 # optimization flags for INTEL (add "-xHost" if compute node eqv. compile node)
-#OPT = -O3 -xHost
+#OPT = -O3 -xHost -check all
 
 # OpenMP flag
 OMP = -fopenmp

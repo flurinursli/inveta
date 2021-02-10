@@ -1282,10 +1282,10 @@ PROGRAM main
                       blankline = .false.)
       CALL update_log(num2char('', width=29) + num2char(etass(1), notation='s', width=8, precision=1, justify='r') + ',' +  &
                       num2char(etass(2),    notation='s', width=8, precision=1) + '|' +                      &
-                      num2char(nu(1), notation='f', width=6, precision=1, justify='r') + ',' +         &
-                      num2char(nu(2), notation='f', width=6, precision=1) + '|' +                      &
-                      num2char(hurst(1), notation='f', width=6, precision=1, justify='r') + ',' +      &
-                      num2char(hurst(2), notation='f', width=6, precision=1) + '|', blankline = .false.)
+                      num2char(nu(1), notation='f', width=6, precision=2, justify='r') + ',' +         &
+                      num2char(nu(2), notation='f', width=6, precision=2) + '|' +                      &
+                      num2char(hurst(1), notation='f', width=6, precision=2, justify='r') + ',' +      &
+                      num2char(hurst(2), notation='f', width=6, precision=2) + '|', blankline = .false.)
       IF (ANY(nu .ne. 0._r32)) THEN
         CALL update_log(num2char('acf of choice', width=29, fill='.') + num2char(acf, width=17, justify='r') + '|',    &
                         blankline = .false.)
@@ -2127,7 +2127,8 @@ SUBROUTINE read_input_file(ok)
   CALL parse(ok, fwin, lu, 'Factor', ['=', '%'], 'DIRECT', com = '#')                !< fwin
   IF (ok .ne. 0) CALL report_error(parser_error(ok))
 
-  IF (is_empty(fwin)) fwin = 0._r32
+  ! by default, window starts at Tp and Ts
+  IF (is_empty(fwin)) fwin = 100._r32
 
   fwin = fwin / 100._r32
 

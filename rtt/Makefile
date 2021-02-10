@@ -2,14 +2,6 @@ include ../Makefile.inc
 
 PP_FLAGS = -DMPI
 
-ifeq ($(ERROR_TRAP),y)
-	PP_FLAGS += -DERROR_TRAP
-endif
-
-ifeq ($(PERF),y)
-	PP_FLAGS += -DPERF
-endif
-
 F90_OBJ = hyp_2F1.o quadpack.o m_rtt.o
 
 LIB_NAME = librtt.a
