@@ -1,15 +1,15 @@
 FC = mpif90
 
 # optimization flags for GCC (add "-march=native" if compute node eqv. compile node)
-OPT = -g -std=f2008 -fcheck=all -fbacktrace
+#OPT = -g -std=f2008 -fcheck=all -fbacktrace
 #OPT = -O3 -std=f2008 -march=native
 
 # optimization flags for INTEL (add "-xHost" if compute node eqv. compile node)
-#OPT = -O3 -xHost -check all
+OPT = -O3 -xHost
 
 # OpenMP flag
-OMP = -fopenmp
-#OMP = -qopenmp
+#OMP = -fopenmp
+OMP = -qopenmp
 
 # flags for lapack, fftw, etc. libraries: these are system-dependent
 # generic libraries (e.g. for GCC)

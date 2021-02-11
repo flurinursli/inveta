@@ -143,6 +143,7 @@ MODULE m_inveta
       CHARACTER(:),  ALLOCATABLE                                               :: fo
       INTEGER(i32)                                                             :: lu, lf, hf, i, j, k, l, n, p, is, ie, j0, j1, ok
       INTEGER(i32)                                                             :: rank, ierr, req
+      INTEGER(i32),               DIMENSION(2)                                 :: iorank
       INTEGER(i32),               DIMENSION(0:SIZE(pprank2)-1)                 :: displs, pprank
       REAL(r32)                                                                :: gpp, gps, gsp, gss, gi, aksq, kappa, t, const
       REAL(r32),                                                    PARAMETER  :: tau = 0.25_r32, wp = 1._r32, ws = 23.4_r32
@@ -194,13 +195,7 @@ MODULE m_inveta
           IF (elastic) THEN
             WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi * beta
           ELSE
-            IF ( (nu(1) .eq. nu(2)) .and. (hurst(1) .eq. hurst(2)) ) THEN
-              WRITE(lu, *) mean(fbands(:,f)), gss, gi * beta, gm(gss, aksq, kappa)
-            ELSEIF (hurst(1) .eq. hurst(2)) THEN
-              WRITE(lu, *) mean(fbands(:,f)), gss, aksq, gi * beta, gm(gss, aksq, kappa)
-            ELSE
-              WRITE(lu, *) mean(fbands(:,f)), gss, aksq, kappa, gi * beta, gm(gss, aksq, kappa)
-            ENDIF
+            WRITE(lu, *) mean(fbands(:,f)), gss, aksq, kappa, gi * beta, gm(gss, aksq, kappa)
           ENDIF
 
           CLOSE(lu)
@@ -218,13 +213,7 @@ MODULE m_inveta
             IF (elastic) THEN
               WRITE(lu, *) mean(fbands(:,f)), gpp, gps, gsp, gss, gi * beta
             ELSE
-              IF ( (nu(1) .eq. nu(2)) .and. (hurst(1) .eq. hurst(2)) ) THEN
-                WRITE(lu, *) mean(fbands(:,f)), gss, gi * beta, gm(gss, aksq, kappa)
-              ELSEIF (hurst(1) .eq. hurst(2)) THEN
-                WRITE(lu, *) mean(fbands(:,f)), gss, aksq, gi * beta, gm(gss, aksq, kappa)
-              ELSE
-                WRITE(lu, *) mean(fbands(:,f)), gss, aksq, kappa, gi * beta, gm(gss, aksq, kappa)
-              ENDIF
+              WRITE(lu, *) mean(fbands(:,f)), gss, aksq, kappa, gi * beta, gm(gss, aksq, kappa)
             ENDIF
 
             CLOSE(lu)
@@ -251,7 +240,11 @@ MODULE m_inveta
       j0 = displs(rank) + 1
       j1 = j0 + pprank2(rank) - 1
 
+      CALL mpi_comm_rank(comm3, rank, ierr)
+      iorank(1) = rank
+
       CALL mpi_comm_rank(comm1, rank, ierr)
+      iorank(2) = rank
 
       ! write also envelopes associated to best fitting parameters
       DO j = j0, j1
@@ -266,9 +259,16 @@ MODULE m_inveta
 
         IF (elastic) THEN
           CALL rtt(comm3, pprank3, time, tpobs(j) + tau, tsobs(j) + tau, gpp, gps, gsp, gss, gi, beta, wp, ws, tau, envelope, ok)
+          k = MAX(1, NINT((tpobs(j) - tau)/drespl))
         ELSE
           CALL rtt(comm3, pprank3, time, tsobs(j) + tau, gss, gi, beta, acf, kappa, aksq, tau, envelope, ok)
+          k = MAX(1, NINT((tsobs(j) - tau)/drespl))
         ENDIF
+
+        ! mute first part of envelope just for aestetic reasons
+        DO i = 1, k
+          envelope(i) = 0._r32
+        ENDDO
 
         IF (mode .le. 1) THEN
           fo = 'bestfit_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(1)) + '_' + TRIM(inverted(j)) + '.txt'
@@ -276,7 +276,7 @@ MODULE m_inveta
           fo = 'bestfit_' + num2char(lf) + '-' + num2char(hf) + '_' + TRIM(code(j)) + '_' + TRIM(inverted(1)) + '.txt'
         ENDIF
 
-        IF (rank .eq. 0) THEN
+        IF (ALL(iorank .eq. 0)) THEN
 
           OPEN(newunit = lu, file = fo, status = 'unknown', form = 'formatted', access = 'sequential', action = 'write',  &
                iostat = ok)
