@@ -20,9 +20,11 @@ end
 for i = 1:length(v)
   subplot(1, length(v), i), scatter(par(:, v(i)), par(:, n(2)), [], [1:n(1)], 'filled'); grid on;
 
-  xlabel(['parameter #' num2str(i)])
+  xlabel(['parameter #' num2str(v(i))])
 
   if i == 1; ylabel('Misfit'); end;
+
+  if v(i) == 1; set(gca, 'XScale', 'log'); end;
 
 end
 
