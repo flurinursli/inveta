@@ -1,3 +1,4 @@
+# mpi wrapper
 FC = mpif90
 
 # optimization flags for GCC (add "-march=native" if compute node eqv. compile node)
@@ -22,7 +23,7 @@ INCL_FFTW = $(FFTW_PATH)/include
 #INCL_FFTW = /opt/intel/mkl/include/fftw
 #LINK_FLAGS = -lifcore -mkl
 
-# Flag for debugging (leave empty for production runs)
+# Flag for error detection
 ERROR_TRAP = y
 
 # Flag for perfomance analysis
