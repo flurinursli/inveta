@@ -2,7 +2,7 @@ PROGRAM driver
 
   ! gfortran -O2 -std=f2008 m_precisions.f90 m_strings.f90 m_fft_real.f90 m_interpolation.f90 m_llsq.f90 m_rtt.f90 hyp_2F1.f90 quadpack.f90 driver.f90 -I$FFTW_PATH/include -L$FFTW_PATH/lib -L$LAPACK_PATH -llapack -lblas -lfftw3 -lgsl -lgslcblas -cpp -DDEBUG -DDOUBLE_PREC
 
-
+  USE, INTRINSIC     :: iso_fortran_env, only: stdout => output_unit
   USE, NON_INTRINSIC :: m_precisions
   USE, NON_INTRINSIC :: m_rtt
   USE, NON_INTRINSIC :: mpi
@@ -32,22 +32,35 @@ PROGRAM driver
 
     CALL get_command_argument(1, fo, status = ok)                        !< get input file name from command line
 
-    OPEN(newunit = lu, file = TRIM(fo), status = 'unknown', form = 'formatted', access = 'sequential', action = 'read', iostat = ok)
+    IF (ok .ne. 0) THEN
 
-    READ(lu, *); READ(lu, *) flag            !< 0=acoustic, 1=elastic
-    READ(lu, *); READ(lu, *) beta
-    READ(lu, *); READ(lu, *) acf
-    READ(lu, *); READ(lu, *) tmax
-    READ(lu, *); READ(lu, *) dt
-    READ(lu, *); READ(lu, *) tp
-    READ(lu, *); READ(lu, *) ts
-    READ(lu, *); READ(lu, *) gss
-    READ(lu, *); READ(lu, *) gss2pp
-    READ(lu, *); READ(lu, *) gps2pp
-    READ(lu, *); READ(lu, *) nu
-    READ(lu, *); READ(lu, *) hurst
+      WRITE(stdout, *) 'Could not read from command line'
+
+    ELSE
+
+      OPEN(newunit = lu, file = TRIM(fo), status = 'unknown', form = 'formatted', access = 'sequential', action = 'read',   &
+           iostat = ok)
+
+      READ(lu, *); READ(lu, *) flag            !< 0=acoustic, 1=elastic
+      READ(lu, *); READ(lu, *) beta
+      READ(lu, *); READ(lu, *) acf
+      READ(lu, *); READ(lu, *) tmax
+      READ(lu, *); READ(lu, *) dt
+      READ(lu, *); READ(lu, *) tp
+      READ(lu, *); READ(lu, *) ts
+      READ(lu, *); READ(lu, *) gss
+      READ(lu, *); READ(lu, *) gss2pp
+      READ(lu, *); READ(lu, *) gps2pp
+      READ(lu, *); READ(lu, *) nu
+      READ(lu, *); READ(lu, *) hurst
+
+    ENDIF
 
   ENDIF
+
+  CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
+
+  IF (ok .ne. 0) CALL mpi_abort(mpi_comm_world, ok, ierr)
 
   CALL mpi_bcast(flag, 1, mpi_int, 0, mpi_comm_world, ierr)
   CALL mpi_bcast(beta, 1, mpi_real, 0, mpi_comm_world, ierr)
