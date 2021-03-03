@@ -9,7 +9,7 @@ ncols = par(2);
 
 if isempty(folder); folder = pwd; end;
 
-files = dir([folder '/bestfit*' string '*.txt']);
+files = dir([folder '/bestfit_' string '*.txt']);
 
 n = size(files);
 
