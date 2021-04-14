@@ -9,7 +9,7 @@ Bands = {2.,4.; 4.,8.; 8.,16.; 16., 32.},
 # Set parameters range for NA inversion.
 # For scalar RTT, set "EtaSS" and "Nu"; for elastic RTT, set "EtaSS", "EtaSP", "EtaPP", "EtaPS".
 EtaSS = {0.0001, 0.03},
-# Nu could be up to 3 for V.K., up to 8 for Gaussian
+# Nu could be up to 6 for V.K., up to 8 for Gaussian
 Nu   = {0, 0},
 # Hurst can be any number between 0 and 1 (excluded)
 Hurst = {0.25, 0.25},
@@ -32,7 +32,7 @@ Mode = 1, Threshold = 3, Weight = 'n',
 
 # "Pwin" and "Swin" determine window width (sec) for direct wave averaging ("Pwin" needed only for elastic RTT).
 # "Factor" controls how much of a window falls after direct wave (default is 100%).
-DIRECT Pwin = 3., Swin = 3., 
+DIRECT Pwin = 3., Swin = 3.,
 
 # "Pwin" and "Swin" determine MINIMUM window length (sec) for coda inversions ("Pwin" needed only for elastic RTT).
 # Recordings not fulfilling this requirement will not be used for inversion.
