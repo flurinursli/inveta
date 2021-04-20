@@ -7,7 +7,7 @@ Bands = {2.,4.; 4.,8.; 8.,16.; 16., 32.},
 #Bands = {16., 32.},
 
 # Set parameters range for NA inversion.
-# For scalar RTT, set "EtaSS" and "Nu"; for elastic RTT, set "EtaSS", "EtaSP", "EtaPP", "EtaPS".
+# For scalar RTT, set "EtaSS", "Nu" and (eventually) "Hurst"; for elastic RTT, set "EtaSS", "EtaSS/PP", "EtaPS/PP".
 EtaSS = {0.0001, 0.03},
 # Nu could be up to 6 for V.K., up to 8 for Gaussian
 Nu   = {0, 0},
