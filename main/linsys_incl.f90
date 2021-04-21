@@ -9,6 +9,10 @@
 !   11/01/21                  added multiple communicators
 !
 
+#ifdef ERROR_TRAP
+errors = 0
+#endif
+
 DO i = 1, SIZE(delta)
   weight(i) = 0._r32
   delta(i)  = 0._r32
@@ -27,6 +31,10 @@ j1 = j0 + pprank2(rank) - 1
 
 ! loop over observations and compute difference between observed and synthetic envelopes
 DO j = j0, j1
+
+#ifdef ERROR_TRAP
+  IF (errors .gt. 1) CYCLE
+#endif
 
   l = SUM(nobs(1:j))                   !< sum up number of points used for inversion
   n = iobs(j)                          !< number of points in current envelope
@@ -153,6 +161,10 @@ CALL mpi_iallgatherv(mpi_in_place, 0, mpi_datatype_null, delta, pprank, displs, 
 ! setup weights and remaning parameters
 DO j = 1, SIZE(nobs)
 
+#ifdef ERROR_TRAP
+  IF (errors .gt. 1) CYCLE
+#endif
+
   l = SUM(nobs(1:j))                   !< sum up number of points used for inversion
   n = iobs(j)                          !< number of points in current envelope
 
@@ -250,7 +262,12 @@ DO i = 1, SUM(nobs)
   b(i) = delta(i) * weight(i)
 ENDDO
 
-! in output, first [SIZE(nobs) + 1] points contain solution: [ln(c1), ln(c2), ..., ln(cn), b]
+#ifdef ERROR_TRAP
+IF (errors .eq. 0) THEN
+  ! in output, first [SIZE(nobs) + 1] points contain solution: [ln(c1), ln(c2), ..., ln(cn), b]
+  CALL llsq_solver(a, b, ok)
+  IF (ok .ne. 0) errors = 10 + ok
+ENDIF
+#else
 CALL llsq_solver(a, b, ok)
-
-IF (ok .ne. 0) errors = 10 + ok
+#endif
