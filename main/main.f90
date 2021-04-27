@@ -1217,8 +1217,10 @@ PROGRAM main
     CALL update_log('----------------------------------------------------------------------------------------------')
     CALL update_log('Summary of input parameters', blankline = .false.)
     CALL update_log(num2char('Inversion mode', width=29, fill='.') + num2char(mode, width=17, justify='r') + '|')
-    IF (mode .eq. 2) &
-      CALL update_log(num2char('Receivers threshold', width=29, fill='.') + num2char(threshold), blankline = .false.)
+    IF (mode .ge. 1) THEN
+      CALL update_log(num2char('Receivers threshold', width=29, fill='.') + num2char(threshold, width=17, justify='r') + '|', &
+                      blankline=.false.)
+    ENDIF
 
     CALL update_log(num2char('NA parameters', width=29, fill='.') + num2char('InitialModels', width=17, justify='r') + '|' +    &
                     num2char('Models', width=13, justify='r') + '|' + num2char('Resampled', width=13, justify='r') + '|' +  &
@@ -1355,12 +1357,14 @@ PROGRAM main
     CALL mpi_bcast(pdwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(pcwindow, 1, mpi_real, 0, mpi_comm_world, ierr)
   ELSE
-    IF (world_rank .ne. 0) ALLOCATE(nu(2), hurst(2))
+    IF (world_rank .ne. 0) ALLOCATE(hurst(2))
     IF (world_rank .ne. 0) ALLOCATE(CHARACTER(2) :: acf)
-    CALL mpi_bcast(nu, 2, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(hurst, 2, mpi_real, 0, mpi_comm_world, ierr)
     CALL mpi_bcast(acf, 2, mpi_character, 0, mpi_comm_world, ierr)
   ENDIF
+
+  IF (world_rank .ne. 0) ALLOCATE(nu(2))
+  CALL mpi_bcast(nu, 2, mpi_real, 0, mpi_comm_world, ierr)        !< "nu" always needed by "cost_fun"
 
   ! --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --- * --
   ! ----------------------------------------------------- parameters inversion -----------------------------------------------------
@@ -1809,11 +1813,12 @@ PROGRAM main
             ENDIF
 
             DEALLOCATE(envobs, tsobs, nobs, iobs)
-            DEALLOCATE(sampled, fit)
+            IF (ALLOCATED(sampled)) DEALLOCATE(sampled, fit)       !< not allocated if we have less events than threshold
             IF (elastic) DEALLOCATE(tpobs)
             DEALLOCATE(code, inverted)
 
           ELSE
+
             IF (world_rank .eq. 0) CALL update_log('For receiver ' + TRIM(recvr(l)%code(1)) + ' no events inverted')
 
           ENDIF
@@ -2102,7 +2107,7 @@ SUBROUTINE read_input_file(ok)
     RETURN
   ENDIF
 
-  IF (mode .eq. 2) THEN
+  IF (mode .ge. 1) THEN
 
     CALL parse(ok, threshold, lu, 'Threshold', ['=', ','], com = '#')                       !< threshold
     IF (ok .ne. 0) CALL report_error(parser_error(ok))
@@ -2254,6 +2259,8 @@ SUBROUTINE read_input_file(ok)
       RETURN
     ENDIF
 
+    nu = [0._r32, 0._r32]             !< set "nu" as in isotropic scattering, needed by "cost_fun"
+
   ELSE
 
     ! assign some values to "acf" and "hurst" for acoustic isotropic RTT. Note: in such case, these are irrelevant
@@ -2325,7 +2332,7 @@ SUBROUTINE read_input_file(ok)
     RETURN
   ENDIF
 
-  IF (mode .eq. 2) THEN
+  IF (mode .ge. 1) THEN
     IF (wrong_par([threshold], 1)) THEN
       CALL report_error('Parameter "Threshold" must be larger than or equal to 1')
       ok = 1
