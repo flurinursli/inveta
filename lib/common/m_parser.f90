@@ -1106,7 +1106,7 @@ MODULE m_parser
           msg = 'IO error in read_miniseed: sampling interval not found'
 
         CASE(4)
-          msg = 'IO error in read_miniseed: error while reading file'
+          msg = 'IO error in read_miniseed: error while reading file content'
 
         CASE(5)
           msg = 'IO error in read_miniseed: could not close file'

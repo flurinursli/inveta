@@ -1430,7 +1430,7 @@ PROGRAM main
           IF (world_rank .eq. 0) THEN
 
             fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_' + TRIM(recvr(l)%network(p)) + '_' +   &
-                 TRIM(recvr(l)%code(l)) + '_' + TRIM(recvr(l)%channel(p)) + '[ENZ].mseed.ascii'
+                 TRIM(recvr(l)%code(p)) + '_' + TRIM(recvr(l)%channel(p)) + '[ENZ].mseed.ascii'
 
             CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
 
@@ -1438,7 +1438,7 @@ PROGRAM main
             IF (ok .ne. 0) THEN
               DO i = 1, 4
                 fo = TRIM(recvr(l)%folder) + '/' + TRIM(recvr(l)%event(p)) + '_' + TRIM(recvr(l)%network(p)) + '_' +   &
-                     TRIM(recvr(l)%code(l)) + '_' + TRIM(recvr(l)%channel(p)) + '[ENZ]_' + num2char(i) + '.mseed.ascii'
+                     TRIM(recvr(l)%code(p)) + '_' + TRIM(recvr(l)%channel(p)) + '[ENZ]_' + num2char(i) + '.mseed.ascii'
                 CALL read_miniseed(ok, fo, dt, timeseries, recvr(l)%ts(p) * tlim)
                 IF (ok .eq. 0) EXIT
               ENDDO
@@ -1449,7 +1449,10 @@ PROGRAM main
           CALL mpi_bcast(ok, 1, mpi_int, 0, mpi_comm_world, ierr)
 
           IF (ok .ne. 0) THEN
-            IF (world_rank .eq. 0) CALL report_error('File ' + fo + ' not found in folder ' + recvr(l)%folder)
+            IF (world_rank .eq. 0) THEN
+              CALL report_error('Error for file ' + fo)
+              CALL report_error(parser_error(ok))
+            ENDIF
             CALL mpi_barrier(mpi_comm_world, ierr)
             CALL mpi_abort(mpi_comm_world, ok, ierr)
           ENDIF
